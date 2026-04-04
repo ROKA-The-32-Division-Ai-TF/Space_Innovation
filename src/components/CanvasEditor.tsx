@@ -23,6 +23,7 @@ interface CanvasEditorProps {
   showReviewOverlay?: boolean;
   svgId?: string;
   onSelectElement: (elementId: string | undefined) => void;
+  onOpenElementActions: (elementId: string) => void;
   onUpdateElement: (elementId: string, patch: Partial<LayoutElement>) => void;
   onCreateElement: (kind: ObjectKind, rect: { x: number; y: number; width: number; height: number }) => void;
   onUpdateRoomGeometry: (outline: Point[], boundarySegments: RoomBoundarySegment[]) => void;
@@ -300,6 +301,7 @@ export const CanvasEditor = ({
   showReviewOverlay = false,
   svgId = "layout-export-surface",
   onSelectElement,
+  onOpenElementActions,
   onUpdateElement,
   onCreateElement,
   onUpdateRoomGeometry
@@ -570,18 +572,21 @@ export const CanvasEditor = ({
               onClick={() => setZoomLevel((current) => Math.max(1, Number((current - 0.25).toFixed(2))))}
               type="button"
             >
-              축소
+              -
             </button>
             <button className="canvas-zoom-controls__button canvas-zoom-controls__button--value" onClick={() => setZoomLevel(1)} type="button">
               {Math.round(zoomLevel * 100)}%
             </button>
             <button
               className="canvas-zoom-controls__button"
-              disabled={zoomLevel >= 2}
-              onClick={() => setZoomLevel((current) => Math.min(2, Number((current + 0.25).toFixed(2))))}
+              disabled={zoomLevel >= 2.5}
+              onClick={() => setZoomLevel((current) => Math.min(2.5, Number((current + 0.25).toFixed(2))))}
               type="button"
             >
-              확대
+              +
+            </button>
+            <button className="canvas-zoom-controls__button" onClick={() => setZoomLevel(1)} type="button">
+              맞춤
             </button>
           </div>
         </div>
@@ -683,6 +688,7 @@ export const CanvasEditor = ({
                   fill="transparent"
                   className={selected ? "shape shape--selected" : "shape"}
                   onPointerDown={(event) => handlePointerDown(event, element)}
+                  onDoubleClick={() => onOpenElementActions(element.id)}
                 />
                 <text x={12} y={20} className="shape-label">
                   {element.name}

@@ -6,6 +6,7 @@ interface StepHeaderProps {
   currentHint: string;
   selectedSpaceLabel?: string;
   onChangeSpace: () => void;
+  onToggleTheme: () => void;
 }
 
 const stepItems: { id: WorkflowStep; label: string }[] = [
@@ -16,13 +17,13 @@ const stepItems: { id: WorkflowStep; label: string }[] = [
   { id: "review", label: "검토" }
 ];
 
-export const StepHeader = ({ currentStep, currentHint, selectedSpaceLabel, onChangeSpace }: StepHeaderProps) => {
+export const StepHeader = ({ currentStep, currentHint, selectedSpaceLabel, onChangeSpace, onToggleTheme }: StepHeaderProps) => {
   const currentIndex = stepItems.findIndex((item) => item.id === currentStep);
 
   return (
     <header className="step-header">
       <div className="step-header__brand">
-        <UnitBadge />
+        <UnitBadge onClick={onToggleTheme} />
         <div className="step-header__copy">
           <span className="step-header__eyebrow">32사단 공간 배치 검토 도구</span>
           <div className="step-header__title-row">

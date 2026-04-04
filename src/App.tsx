@@ -73,22 +73,22 @@ const workflowMeta: Record<WorkflowStep, { label: string; hint: string; primaryL
   room: {
     label: "구조 생성",
     hint: "기본 사각형을 그대로 쓰거나, 가로·세로 수치를 먼저 입력한 뒤 필요할 때만 벽을 수정하세요.",
-    primaryLabel: "문/창문 배치로"
+    primaryLabel: "문/창문"
   },
   openings: {
     label: "문/창문 배치",
     hint: "출입문과 창문, 고정 구조물을 먼저 두면 이후 검토가 더 정확해집니다.",
-    primaryLabel: "가구 배치로"
+    primaryLabel: "가구"
   },
   furniture: {
     label: "가구 배치",
     hint: "침상, 책상, 캐비닛, 상황판을 두고 손가락으로 바로 위치를 조정해보세요.",
-    primaryLabel: "배치 검토"
+    primaryLabel: "검토"
   },
   review: {
     label: "검토",
     hint: "통로, 문 전방, 밀집도를 색상으로 확인하고 PNG로 바로 내보낼 수 있습니다.",
-    primaryLabel: "PNG 내보내기"
+    primaryLabel: "PNG"
   }
 };
 
@@ -150,6 +150,7 @@ const App = () => {
   const [reviewOverlayVisible, setReviewOverlayVisible] = useState(false);
   const [roomWidthInput, setRoomWidthInput] = useState(800);
   const [roomHeightInput, setRoomHeightInput] = useState(600);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [notice, setNotice] = useState<string>();
 
   const selectedElement = layout.elements.find((element) => element.id === selectedElementId);
@@ -166,20 +167,16 @@ const App = () => {
   }, [workflowStep]);
 
   useEffect(() => {
+    document.body.classList.toggle("theme-dark", isDarkMode);
+    return () => {
+      document.body.classList.remove("theme-dark");
+    };
+  }, [isDarkMode]);
+
+  useEffect(() => {
     setRoomWidthInput(layout.room.width);
     setRoomHeightInput(layout.room.height);
   }, [layout.room.height, layout.room.width]);
-
-  useEffect(() => {
-    if (!selectedElementId) {
-      if (bottomSheetMode === "selection-actions") {
-        setBottomSheetMode(workflowStep === "review" ? "review-summary" : null);
-      }
-      return;
-    }
-
-    setBottomSheetMode("selection-actions");
-  }, [bottomSheetMode, selectedElementId, workflowStep]);
 
   const updateElement = (elementId: string, patch: Partial<LayoutElement>) => {
     setLayout((currentLayout) => ({
@@ -390,6 +387,7 @@ const App = () => {
   const canRotate = Boolean(selectedElement);
   const primaryDisabled = false;
   const currentPickerKinds = workflowStep === "openings" ? openingKinds : furnitureKinds;
+  const canEditElement = Boolean(selectedElement);
   const actionBarItems =
     workflowStep === "space"
       ? [
@@ -453,17 +451,23 @@ const App = () => {
               },
               {
                 key: "select",
-                label: "선택",
+                label: "이동",
                 active: editorMode === "select",
                 onClick: () => {
                   setEditorMode("select");
-                  if (selectedElementId) {
-                    setBottomSheetMode("selection-actions");
-                  } else {
-                    setBottomSheetMode(null);
-                  }
+                  setBottomSheetMode(null);
                 }
               },
+              ...(canEditElement
+                ? [
+                    {
+                      key: "edit",
+                      label: "편집",
+                      active: bottomSheetMode === "selection-actions",
+                      onClick: () => setBottomSheetMode("selection-actions")
+                    }
+                  ]
+                : []),
               ...(canRotate
                 ? [
                     {
@@ -518,11 +522,15 @@ const App = () => {
   };
 
   return (
-    <div className="app-shell">
+    <div className={isDarkMode ? "app-shell app-shell--dark" : "app-shell"}>
       <StepHeader
         currentStep={workflowStep}
         currentHint={currentHint}
         selectedSpaceLabel={selectedSpaceType?.label}
+        onToggleTheme={() => {
+          setIsDarkMode((current) => !current);
+          setNotice(isDarkMode ? "기본 화면으로 전환했습니다." : "다크모드로 전환했습니다.");
+        }}
         onChangeSpace={() => {
           setWorkflowStep("space");
           setBottomSheetMode("space-type");
@@ -619,6 +627,10 @@ const App = () => {
             review={review}
             showReviewOverlay={reviewOverlayVisible}
             onSelectElement={setSelectedElementId}
+            onOpenElementActions={(elementId) => {
+              setSelectedElementId(elementId);
+              setBottomSheetMode("selection-actions");
+            }}
             onUpdateElement={updateElement}
             onCreateElement={(kind, rect) => createElement(kind, rect)}
             onUpdateRoomGeometry={updateRoomGeometry}

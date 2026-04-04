@@ -49,6 +49,10 @@ body {
   overflow-x: hidden;
 }
 
+body.theme-dark {
+  background: linear-gradient(180deg, #1b201d 0%, #131816 100%);
+}
+
 button,
 input,
 textarea,
@@ -72,6 +76,29 @@ img {
   margin: 0 auto;
   min-height: 100vh;
   padding: 18px 16px calc(104px + env(safe-area-inset-bottom, 0px));
+}
+
+.app-shell--dark {
+  --bg: #151a18;
+  --panel: rgba(24, 30, 27, 0.96);
+  --panel-strong: rgba(26, 33, 29, 0.99);
+  --ink: #e7ece7;
+  --ink-soft: #a7b1aa;
+  --line: rgba(231, 236, 231, 0.12);
+  --line-strong: rgba(231, 236, 231, 0.22);
+  --accent: #7b9076;
+  --accent-strong: #dce7da;
+  --accent-soft: rgba(123, 144, 118, 0.18);
+  --shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.22);
+  --shadow-strong: 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.unit-badge-button {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .unit-badge {
@@ -122,6 +149,9 @@ img {
   margin: 0;
   font-size: 1.45rem;
   letter-spacing: -0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .step-header__copy p {
@@ -180,6 +210,7 @@ img {
 .step-progress__item strong {
   font-size: 0.92rem;
   line-height: 1.25;
+  white-space: nowrap;
 }
 
 .step-progress__item--active {
@@ -356,6 +387,7 @@ img {
 
 .canvas-zoom-controls__button {
   min-height: 36px;
+  min-width: 38px;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -594,6 +626,7 @@ img {
   cursor: pointer;
   font-weight: 700;
   white-space: nowrap;
+  font-size: 0.9rem;
 }
 
 .action-bar__button--active {
@@ -897,5 +930,62 @@ img {
 
   .bottom-sheet {
     border-radius: 20px 20px 0 0;
+  }
+}
+
+@media (max-width: 340px) {
+  .app-shell {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .step-header__brand {
+    padding: 12px;
+  }
+
+  .step-header__eyebrow,
+  .step-header__copy p,
+  .notice-banner {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .step-header__title-row h1 {
+    font-size: 1.25rem;
+  }
+
+  .header-link-button,
+  .legend,
+  .action-bar__button,
+  .canvas-zoom-controls__button {
+    font-size: 0.78rem;
+  }
+
+  .action-bar {
+    gap: 6px;
+    width: min(calc(100% - 12px), 760px);
+    padding: 6px;
+  }
+
+  .action-bar__group {
+    gap: 6px;
+  }
+
+  .action-bar__button {
+    min-width: 60px;
+    padding: 10px 10px;
+  }
+
+  .room-start-card {
+    padding: 14px;
+  }
+
+  .room-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .room-helper-list {
+    display: none;
   }
 }
