@@ -955,6 +955,40 @@ img {
   color: var(--ink);
 }
 
+.app-shell--dark .step-header__copy p,
+.app-shell--dark .room-start-card__copy p,
+.app-shell--dark .room-helper-list,
+.app-shell--dark .stage-empty-card p,
+.app-shell--dark .canvas-shell__header p,
+.app-shell--dark .canvas-shell__empty p,
+.app-shell--dark .sheet-option-card p,
+.app-shell--dark .sheet-section__label,
+.app-shell--dark .sheet-section__helper,
+.app-shell--dark .selection-form label,
+.app-shell--dark .bottom-sheet__header p,
+.app-shell--dark .side-menu__header p,
+.app-shell--dark .review-summary__text,
+.app-shell--dark .review-summary__hero span,
+.app-shell--dark .review-item p {
+  color: var(--ink-soft);
+}
+
+.app-shell--dark .step-progress__item {
+  background: rgba(23, 29, 26, 0.96);
+  border-color: rgba(231, 236, 231, 0.12);
+  color: var(--ink-soft);
+}
+
+.app-shell--dark .step-progress__item--active {
+  background: rgba(33, 42, 37, 0.98);
+  border-color: rgba(123, 144, 118, 0.28);
+  color: var(--ink);
+}
+
+.app-shell--dark .step-progress__item--done {
+  color: var(--ink);
+}
+
 .app-shell--dark .step-header__brand,
 .app-shell--dark .stage-empty-card,
 .app-shell--dark .room-start-card,
@@ -968,13 +1002,26 @@ img {
 .app-shell--dark .action-bar__button,
 .app-shell--dark .header-link-button,
 .app-shell--dark .legend,
-.app-shell--dark .canvas-zoom-controls__button {
+.app-shell--dark .canvas-zoom-controls__button,
+.app-shell--dark .canvas-shell__empty {
   background: rgba(25, 31, 28, 0.98);
   border-color: rgba(231, 236, 231, 0.12);
 }
 
+.app-shell--dark .side-menu-backdrop,
+.app-shell--dark .bottom-sheet-backdrop {
+  background: rgba(2, 5, 4, 0.5);
+}
+
 .app-shell--dark .action-bar {
   background: rgba(18, 24, 21, 0.96);
+}
+
+.app-shell--dark .selection-form input,
+.app-shell--dark .room-dimension-field input {
+  background: rgba(17, 22, 20, 0.98);
+  color: var(--ink);
+  border-color: rgba(231, 236, 231, 0.14);
 }
 
 .app-shell--dark .action-bar__button--primary,
@@ -999,6 +1046,38 @@ img {
     linear-gradient(90deg, rgba(197, 208, 203, 0.06) 1px, transparent 1px),
     linear-gradient(180deg, #1b211e 0%, #151a18 100%);
   background-size: 20px 20px, 20px 20px, auto;
+}
+
+.app-shell--dark .room-boundary-path {
+  fill: rgba(34, 42, 38, 0.96);
+  stroke: #92a79a;
+}
+
+.app-shell--dark .room-outline,
+.app-shell--dark .room-outline-draft,
+.app-shell--dark .room-preview-segment,
+.app-shell--dark .room-vertex {
+  stroke: #c7d2cc;
+}
+
+.app-shell--dark .room-vertex {
+  fill: #111713;
+}
+
+.app-shell--dark .segment-tag {
+  fill: rgba(22, 28, 25, 0.96);
+  stroke: rgba(231, 236, 231, 0.14);
+}
+
+.app-shell--dark .segment-tag__text,
+.app-shell--dark .shape-label,
+.app-shell--dark .draft-label {
+  fill: #e6ece7;
+}
+
+.app-shell--dark .draft-rect {
+  fill: rgba(123, 144, 118, 0.12);
+  stroke: #9ab195;
 }
 
 @media (min-width: 700px) {
