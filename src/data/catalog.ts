@@ -23,7 +23,7 @@ export const catalogItems: CatalogItem[] = [
   },
   {
     kind: "locker",
-    label: "관물대",
+    label: "캐비닛",
     width: 90,
     height: 60,
     volumeHeight: 190,
@@ -64,6 +64,15 @@ export const catalogItems: CatalogItem[] = [
     height: 80,
     volumeHeight: 160,
     color: "#2f9e44",
+    category: "furniture"
+  },
+  {
+    kind: "board",
+    label: "상황판",
+    width: 180,
+    height: 80,
+    volumeHeight: 18,
+    color: "#22577a",
     category: "furniture"
   },
   {

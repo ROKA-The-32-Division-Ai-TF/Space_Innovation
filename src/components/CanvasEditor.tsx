@@ -1,29 +1,27 @@
 import { PointerEvent, ReactNode, useMemo, useRef, useState } from "react";
+import { ReviewSummary, EditorMode, LayoutElement, ObjectKind, Point, RoomBoundarySegment, RoomDrawTool, SpaceLayout } from "../types/layout";
 import { catalogItems } from "../data/catalog";
 import {
   boundarySegmentsToPath,
-  buildRoomShapePreset,
   createArcSegment,
   createBandRect,
+  createDoorFrontZone,
   createLineSegment,
-  flattenBoundarySegments
+  flattenBoundarySegments,
+  normalizeElementRect
 } from "../engine/geometry";
-import {
-  EditorMode,
-  LayoutElement,
-  ObjectKind,
-  Point,
-  RoomBoundarySegment,
-  RoomDrawTool,
-  RoomShapePreset,
-  SpaceLayout
-} from "../types/layout";
 
 interface CanvasEditorProps {
   layout: SpaceLayout;
   selectedElementId?: string;
   editorMode: EditorMode;
   drawKind?: ObjectKind;
+  helperText: string;
+  roomDrawTool: RoomDrawTool;
+  curveDirection: 1 | -1;
+  review?: ReviewSummary;
+  showReviewOverlay?: boolean;
+  svgId?: string;
   onSelectElement: (elementId: string | undefined) => void;
   onUpdateElement: (elementId: string, patch: Partial<LayoutElement>) => void;
   onCreateElement: (kind: ObjectKind, rect: { x: number; y: number; width: number; height: number }) => void;
@@ -41,6 +39,7 @@ interface VisualProps {
   width: number;
   height: number;
   selected: boolean;
+  severity?: ReviewSummary["violations"][number]["severity"];
 }
 
 interface DraftRectState {
@@ -151,33 +150,29 @@ const getSegmentLabelPoint = (segment: RoomBoundarySegment) => {
   };
 };
 
-const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
-  const stroke = selected ? "#0058a3" : "#55606d";
-  const softStroke = selected ? "rgba(0, 88, 163, 0.32)" : "rgba(85, 96, 109, 0.18)";
-  const panelFill = "rgba(255, 255, 255, 0.96)";
-  const utilityFill = "rgba(247, 244, 238, 0.98)";
-  const accentFill = "rgba(230, 217, 194, 0.98)";
-  const hatch = "rgba(122, 110, 96, 0.28)";
-  const textile = "rgba(221, 231, 241, 0.98)";
+const severityPriority: Record<NonNullable<ReviewSummary["violations"][number]["severity"]>, number> = {
+  minor: 1,
+  major: 2,
+  critical: 3
+};
+
+const FurnitureVisual = ({ element, width, height, selected, severity }: VisualProps) => {
+  const baseStroke = severity === "critical" ? "#b42318" : severity === "major" ? "#b66a00" : "#415364";
+  const accentStroke = selected ? "#0f766e" : baseStroke;
+  const panelFill = "rgba(250, 251, 252, 0.98)";
+  const mutedFill = "rgba(230, 235, 239, 0.95)";
+  const steelFill = "rgba(214, 222, 229, 0.98)";
+  const textileFill = "rgba(229, 237, 244, 0.98)";
+  const emphasisFill = severity === "critical" ? "rgba(252, 236, 233, 0.92)" : severity === "major" ? "rgba(255, 245, 220, 0.96)" : panelFill;
 
   if (element.kind === "bed") {
     return (
       <>
-        <rect x={0} y={0} width={width} height={height} rx={8} ry={8} fill={panelFill} stroke={stroke} strokeWidth={2.6} />
-        <rect x={8} y={8} width={width - 16} height={height - 16} rx={6} ry={6} fill={accentFill} stroke={stroke} strokeWidth={1.6} />
-        <rect
-          x={12}
-          y={12}
-          width={Math.max(width * 0.26, 28)}
-          height={Math.max(height * 0.26, 20)}
-          rx={5}
-          ry={5}
-          fill={textile}
-          stroke={softStroke}
-          strokeWidth={1.4}
-        />
-        <line x1={width - 10} y1={10} x2={width - 10} y2={height - 10} stroke="#9a7b58" strokeWidth={1.6} />
-        <line x1={18} y1={height - 18} x2={width - 16} y2={height - 18} stroke="rgba(255,255,255,0.75)" strokeWidth={4.2} strokeLinecap="round" />
+        <rect x={0} y={0} width={width} height={height} rx={8} ry={8} fill={panelFill} stroke={accentStroke} strokeWidth={2.4} />
+        <rect x={8} y={8} width={width - 16} height={height - 16} rx={6} ry={6} fill={textileFill} stroke="rgba(82, 97, 112, 0.2)" strokeWidth={1.4} />
+        <rect x={12} y={12} width={Math.max(width * 0.26, 26)} height={Math.max(height * 0.24, 18)} rx={5} ry={5} fill="#ffffff" stroke="rgba(90, 108, 126, 0.18)" strokeWidth={1.2} />
+        <line x1={width - 10} y1={10} x2={width - 10} y2={height - 10} stroke={accentStroke} strokeWidth={1.4} />
+        <line x1={18} y1={height - 18} x2={width - 18} y2={height - 18} stroke="rgba(86, 103, 120, 0.26)" strokeWidth={2} strokeLinecap="round" />
       </>
     );
   }
@@ -185,15 +180,12 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "locker") {
     return (
       <>
-        <rect x={0} y={0} width={width} height={height} rx={6} ry={6} fill={panelFill} stroke={stroke} strokeWidth={2.4} />
-        <rect x={6} y={6} width={width - 12} height={height - 12} rx={5} ry={5} fill="rgba(238,243,247,0.96)" stroke={softStroke} strokeWidth={1.2} />
-        <line x1={width / 2} y1={8} x2={width / 2} y2={height - 8} stroke={stroke} strokeWidth={1.5} />
-        <circle cx={width / 2 - 8} cy={height / 2} r={2.4} fill={stroke} />
-        <circle cx={width / 2 + 8} cy={height / 2} r={2.4} fill={stroke} />
-        <line x1={12} y1={14} x2={width / 2 - 12} y2={14} stroke={hatch} strokeWidth={1.4} />
-        <line x1={12} y1={20} x2={width / 2 - 12} y2={20} stroke={hatch} strokeWidth={1.4} />
-        <line x1={width / 2 + 12} y1={14} x2={width - 12} y2={14} stroke={hatch} strokeWidth={1.4} />
-        <line x1={width / 2 + 12} y1={20} x2={width - 12} y2={20} stroke={hatch} strokeWidth={1.4} />
+        <rect x={0} y={0} width={width} height={height} rx={6} ry={6} fill={emphasisFill} stroke={accentStroke} strokeWidth={2.3} />
+        <line x1={width / 2} y1={8} x2={width / 2} y2={height - 8} stroke={accentStroke} strokeWidth={1.4} />
+        <circle cx={width / 2 - 8} cy={height / 2} r={2.2} fill={accentStroke} />
+        <circle cx={width / 2 + 8} cy={height / 2} r={2.2} fill={accentStroke} />
+        <line x1={12} y1={14} x2={width - 12} y2={14} stroke="rgba(65, 83, 100, 0.18)" strokeWidth={1.2} />
+        <line x1={12} y1={20} x2={width - 12} y2={20} stroke="rgba(65, 83, 100, 0.18)" strokeWidth={1.2} />
       </>
     );
   }
@@ -201,12 +193,12 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "desk") {
     return (
       <>
-        <rect x={6} y={8} width={width - 12} height={height - 18} rx={5} ry={5} fill="#d8b38a" stroke="#8e6748" strokeWidth={2.2} />
-        <rect x={12} y={14} width={Math.max(width * 0.24, 22)} height={height - 30} rx={4} ry={4} fill={utilityFill} stroke={softStroke} strokeWidth={1.2} />
-        <line x1={18} y1={20} x2={18 + Math.max(width * 0.18, 14)} y2={20} stroke={hatch} strokeWidth={1.2} />
-        <line x1={18} y1={26} x2={18 + Math.max(width * 0.18, 14)} y2={26} stroke={hatch} strokeWidth={1.2} />
-        <line x1={16} y1={height - 10} x2={16} y2={height - 2} stroke="#7d5a3e" strokeWidth={2.4} />
-        <line x1={width - 16} y1={height - 10} x2={width - 16} y2={height - 2} stroke="#7d5a3e" strokeWidth={2.4} />
+        <rect x={6} y={8} width={width - 12} height={height - 18} rx={5} ry={5} fill={panelFill} stroke={accentStroke} strokeWidth={2.2} />
+        <rect x={12} y={14} width={Math.max(width * 0.24, 22)} height={height - 30} rx={4} ry={4} fill={mutedFill} stroke="rgba(82, 97, 112, 0.18)" strokeWidth={1.1} />
+        <line x1={18} y1={20} x2={18 + Math.max(width * 0.18, 14)} y2={20} stroke="rgba(82, 97, 112, 0.22)" strokeWidth={1.2} />
+        <line x1={18} y1={26} x2={18 + Math.max(width * 0.18, 14)} y2={26} stroke="rgba(82, 97, 112, 0.22)" strokeWidth={1.2} />
+        <line x1={16} y1={height - 10} x2={16} y2={height - 2} stroke={accentStroke} strokeWidth={2.2} />
+        <line x1={width - 16} y1={height - 10} x2={width - 16} y2={height - 2} stroke={accentStroke} strokeWidth={2.2} />
       </>
     );
   }
@@ -214,10 +206,10 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "chair") {
     return (
       <>
-        <rect x={10} y={18} width={width - 20} height={height * 0.26} rx={5} ry={5} fill="#d9c2a3" stroke="#8a6545" strokeWidth={2.1} />
-        <rect x={12} y={6} width={width - 24} height={height * 0.2} rx={5} ry={5} fill={textile} stroke={stroke} strokeWidth={1.8} />
-        <line x1={18} y1={height * 0.44} x2={14} y2={height - 6} stroke={stroke} strokeWidth={2.4} />
-        <line x1={width - 18} y1={height * 0.44} x2={width - 14} y2={height - 6} stroke={stroke} strokeWidth={2.4} />
+        <rect x={10} y={18} width={width - 20} height={height * 0.26} rx={5} ry={5} fill={mutedFill} stroke={accentStroke} strokeWidth={2.1} />
+        <rect x={12} y={6} width={width - 24} height={height * 0.2} rx={5} ry={5} fill={panelFill} stroke={accentStroke} strokeWidth={1.8} />
+        <line x1={18} y1={height * 0.44} x2={14} y2={height - 6} stroke={accentStroke} strokeWidth={2.2} />
+        <line x1={width - 18} y1={height * 0.44} x2={width - 14} y2={height - 6} stroke={accentStroke} strokeWidth={2.2} />
       </>
     );
   }
@@ -225,9 +217,9 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "storage") {
     return (
       <>
-        <rect x={0} y={0} width={width} height={height} rx={6} ry={6} fill="#efe8db" stroke="#8c7759" strokeWidth={2.4} />
-        <line x1={10} y1={height / 2} x2={width - 10} y2={height / 2} stroke={stroke} strokeWidth={1.5} />
-        <rect x={width * 0.34} y={8} width={width * 0.32} height={7} rx={3} ry={3} fill="#fff8d6" stroke={softStroke} strokeWidth={1} />
+        <rect x={0} y={0} width={width} height={height} rx={6} ry={6} fill={emphasisFill} stroke={accentStroke} strokeWidth={2.3} />
+        <line x1={10} y1={height / 2} x2={width - 10} y2={height / 2} stroke={accentStroke} strokeWidth={1.4} />
+        <rect x={width * 0.34} y={8} width={width * 0.32} height={7} rx={3} ry={3} fill="#e7eef5" stroke="rgba(82, 97, 112, 0.16)" strokeWidth={1} />
       </>
     );
   }
@@ -235,11 +227,22 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "equipment") {
     return (
       <>
-        <rect x={0} y={0} width={width} height={height} rx={6} ry={6} fill="#dde7ef" stroke={stroke} strokeWidth={2.4} />
-        <rect x={10} y={10} width={width - 20} height={height - 20} rx={4} ry={4} fill="none" stroke={softStroke} strokeWidth={1.3} />
-        <circle cx={24} cy={height / 2} r={6} fill="#ffdb00" stroke={stroke} strokeWidth={1.3} />
-        <rect x={width - 42} y={height / 2 - 6} width={22} height={12} rx={3} ry={3} fill="#ffdb00" stroke={stroke} strokeWidth={1.3} />
-        <line x1={width / 2} y1={14} x2={width / 2} y2={height - 14} stroke={softStroke} strokeWidth={1.5} />
+        <rect x={0} y={0} width={width} height={height} rx={6} ry={6} fill={steelFill} stroke={accentStroke} strokeWidth={2.3} />
+        <rect x={10} y={10} width={width - 20} height={height - 20} rx={4} ry={4} fill="none" stroke="rgba(82, 97, 112, 0.18)" strokeWidth={1.3} />
+        <circle cx={24} cy={height / 2} r={5} fill="#f2b91c" stroke={accentStroke} strokeWidth={1.2} />
+        <rect x={width - 42} y={height / 2 - 6} width={22} height={12} rx={3} ry={3} fill="#f2b91c" stroke={accentStroke} strokeWidth={1.2} />
+      </>
+    );
+  }
+
+  if (element.kind === "board") {
+    return (
+      <>
+        <rect x={0} y={0} width={width} height={height} rx={6} ry={6} fill="#f7fafc" stroke={accentStroke} strokeWidth={2.3} />
+        <rect x={8} y={8} width={width - 16} height={height - 16} rx={4} ry={4} fill="#eef3f8" stroke="rgba(82, 97, 112, 0.18)" strokeWidth={1.2} />
+        <line x1={18} y1={18} x2={width - 18} y2={18} stroke={accentStroke} strokeWidth={1.3} />
+        <line x1={18} y1={30} x2={width - 28} y2={30} stroke="rgba(82, 97, 112, 0.2)" strokeWidth={1.2} />
+        <line x1={18} y1={42} x2={width - 40} y2={42} stroke="rgba(82, 97, 112, 0.2)" strokeWidth={1.2} />
       </>
     );
   }
@@ -247,16 +250,16 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "door") {
     return (
       <>
-        <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke={stroke} strokeWidth={3} />
-        <line x1={10} y1={height - 3} x2={10} y2={3} stroke={stroke} strokeWidth={2.4} />
+        <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke={accentStroke} strokeWidth={3} />
+        <line x1={10} y1={height - 3} x2={10} y2={3} stroke={accentStroke} strokeWidth={2.2} />
         <path
           d={`M 10 ${height - 3} Q ${width / 2} ${height - Math.min(width * 0.5, 46)} ${width - 8} ${height - 3}`}
           fill="none"
-          stroke={softStroke}
+          stroke="rgba(82, 97, 112, 0.26)"
           strokeWidth={1.8}
           strokeDasharray="5 4"
         />
-        <line x1={10} y1={height - 3} x2={width - 8} y2={height - 3} stroke={stroke} strokeWidth={1.8} />
+        <line x1={10} y1={height - 3} x2={width - 8} y2={height - 3} stroke={accentStroke} strokeWidth={1.8} />
       </>
     );
   }
@@ -264,10 +267,10 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "window") {
     return (
       <>
-        <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke={stroke} strokeWidth={3} />
-        <line x1={8} y1={5} x2={width - 8} y2={5} stroke={softStroke} strokeWidth={1.8} />
-        <line x1={8} y1={height - 5} x2={width - 8} y2={height - 5} stroke={softStroke} strokeWidth={1.8} />
-        <line x1={width / 2} y1={5} x2={width / 2} y2={height - 5} stroke={softStroke} strokeWidth={1.5} />
+        <line x1={0} y1={height / 2} x2={width} y2={height / 2} stroke={accentStroke} strokeWidth={3} />
+        <line x1={8} y1={5} x2={width - 8} y2={5} stroke="rgba(82, 97, 112, 0.18)" strokeWidth={1.8} />
+        <line x1={8} y1={height - 5} x2={width - 8} y2={height - 5} stroke="rgba(82, 97, 112, 0.18)" strokeWidth={1.8} />
+        <line x1={width / 2} y1={5} x2={width / 2} y2={height - 5} stroke="rgba(82, 97, 112, 0.18)" strokeWidth={1.4} />
       </>
     );
   }
@@ -275,14 +278,14 @@ const FurnitureVisual = ({ element, width, height, selected }: VisualProps) => {
   if (element.kind === "pillar") {
     return (
       <>
-        <rect x={0} y={0} width={width} height={height} rx={4} ry={4} fill={utilityFill} stroke={stroke} strokeWidth={2.2} />
-        <line x1={6} y1={6} x2={width - 6} y2={height - 6} stroke={hatch} strokeWidth={1.6} />
-        <line x1={width - 6} y1={6} x2={6} y2={height - 6} stroke={hatch} strokeWidth={1.6} />
+        <rect x={0} y={0} width={width} height={height} rx={4} ry={4} fill={steelFill} stroke={accentStroke} strokeWidth={2.2} />
+        <line x1={6} y1={6} x2={width - 6} y2={height - 6} stroke="rgba(82, 97, 112, 0.24)" strokeWidth={1.4} />
+        <line x1={width - 6} y1={6} x2={6} y2={height - 6} stroke="rgba(82, 97, 112, 0.24)" strokeWidth={1.4} />
       </>
     );
   }
 
-  return <rect x={0} y={0} width={width} height={height} rx={14} ry={14} fill="#d9dde2" stroke={stroke} strokeWidth={2.2} />;
+  return <rect x={0} y={0} width={width} height={height} rx={8} ry={8} fill={panelFill} stroke={accentStroke} strokeWidth={2.2} />;
 };
 
 export const CanvasEditor = ({
@@ -290,6 +293,12 @@ export const CanvasEditor = ({
   selectedElementId,
   editorMode,
   drawKind,
+  helperText,
+  roomDrawTool,
+  curveDirection,
+  review,
+  showReviewOverlay = false,
+  svgId = "layout-export-surface",
   onSelectElement,
   onUpdateElement,
   onCreateElement,
@@ -301,11 +310,48 @@ export const CanvasEditor = ({
   const [roomDraftPoints, setRoomDraftPoints] = useState<Point[]>([]);
   const [roomDraftSegments, setRoomDraftSegments] = useState<RoomBoundarySegment[]>([]);
   const [roomPreviewSegment, setRoomPreviewSegment] = useState<RoomBoundarySegment | null>(null);
-  const [roomDrawTool, setRoomDrawTool] = useState<RoomDrawTool>("line");
-  const [curveDirection, setCurveDirection] = useState<1 | -1>(1);
 
   const mainBand = useMemo(() => createBandRect(layout.room, "vertical_band", 340, 120), [layout.room]);
   const subBand = useMemo(() => createBandRect(layout.room, "horizontal_band", 250, 80), [layout.room]);
+
+  const violationElementSeverity = useMemo(() => {
+    const severityMap = new Map<string, ReviewSummary["violations"][number]["severity"]>();
+
+    if (!showReviewOverlay || !review) {
+      return severityMap;
+    }
+
+    review.violations.forEach((violation) => {
+      violation.elementIds.forEach((elementId) => {
+        const current = severityMap.get(elementId);
+        if (!current || severityPriority[violation.severity] > severityPriority[current]) {
+          severityMap.set(elementId, violation.severity);
+        }
+      });
+    });
+
+    return severityMap;
+  }, [review, showReviewOverlay]);
+
+  const doorFrontZones = useMemo(() => {
+    if (!showReviewOverlay || !review || !review.violations.some((violation) => violation.ruleId === "door_front_clearance")) {
+      return [];
+    }
+
+    return layout.elements
+      .filter((element) => element.kind === "door")
+      .map((door) => createDoorFrontZone(normalizeElementRect(door), layout.room, 100));
+  }, [layout.elements, layout.room, review, showReviewOverlay]);
+
+  const restrictedDoorZones = useMemo(() => {
+    if (!showReviewOverlay || !review || !review.violations.some((violation) => violation.ruleId === "equipment_near_door")) {
+      return [];
+    }
+
+    return layout.elements
+      .filter((element) => element.kind === "door")
+      .map((door) => createDoorFrontZone(normalizeElementRect(door), layout.room, 120));
+  }, [layout.elements, layout.room, review, showReviewOverlay]);
 
   const toCanvasPoint = (event: PointerEvent<SVGRectElement | SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -475,6 +521,21 @@ export const CanvasEditor = ({
   const roomPath = segmentsToPath(layout.room.boundarySegments, true);
   const activeRoomPath = editorMode === "draw-room" && draftSegments.length > 0 ? segmentsToPath(draftSegments, false) : roomPath;
 
+  const modeLabel =
+    editorMode === "draw-room" ? "벽 그리기" : editorMode === "draw-element" ? `${catalogItems.find((item) => item.kind === drawKind)?.label ?? "요소"} 추가` : "이동";
+
+  const mainBandTone = !showReviewOverlay
+    ? "corridor-band corridor-band--neutral"
+    : review?.violations.some((violation) => violation.ruleId === "main_corridor_min_width")
+      ? "corridor-band corridor-band--danger"
+      : "corridor-band corridor-band--safe";
+
+  const subBandTone = !showReviewOverlay
+    ? "corridor-band corridor-band--neutral"
+    : review?.violations.some((violation) => violation.ruleId === "sub_corridor_min_width")
+      ? "corridor-band corridor-band--warning"
+      : "corridor-band corridor-band--safe";
+
   const renderSegmentTag = (segment: RoomBoundarySegment, key: string): ReactNode => {
     const labelPoint = getSegmentLabelPoint(segment);
     const length = getSegmentLength(segment);
@@ -494,69 +555,18 @@ export const CanvasEditor = ({
       <div className="canvas-shell__header">
         <div>
           <h2>{layout.name}</h2>
-          <p>
-            방 크기 {layout.room.width}cm x {layout.room.height}cm
-          </p>
+          <p>{helperText}</p>
         </div>
-        {editorMode === "draw-room" ? (
-          <div className="canvas-tools">
-            <span className="legend">벽을 한 줄씩 이어 그리고, 필요할 때만 곡선 세그먼트로 바꿔가며 방 형태를 잡을 수 있습니다.</span>
-            <div className="canvas-tools__row">
-              <button
-                type="button"
-                className={roomDrawTool === "line" ? "ghost-button ghost-button--active" : "ghost-button"}
-                onClick={() => setRoomDrawTool("line")}
-              >
-                직선 벽
-              </button>
-              <button
-                type="button"
-                className={roomDrawTool === "arc" ? "ghost-button ghost-button--active" : "ghost-button"}
-                onClick={() => setRoomDrawTool("arc")}
-              >
-                곡선 벽
-              </button>
-              <button
-                type="button"
-                className={curveDirection === 1 ? "ghost-button ghost-button--active" : "ghost-button"}
-                onClick={() => setCurveDirection(1)}
-              >
-                곡률 A
-              </button>
-              <button
-                type="button"
-                className={curveDirection === -1 ? "ghost-button ghost-button--active" : "ghost-button"}
-                onClick={() => setCurveDirection(-1)}
-              >
-                곡률 B
-              </button>
-            </div>
-            <div className="canvas-tools__row">
-              {(["rectangle", "l-shape", "u-shape"] as RoomShapePreset[]).map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => {
-                    const geometry = buildRoomShapePreset(preset, layout.room.width, layout.room.height);
-                    onUpdateRoomGeometry(geometry.outline, geometry.boundarySegments);
-                  }}
-                >
-                  {preset === "rectangle" ? "사각형" : preset === "l-shape" ? "L자" : "U자"}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
+        <div className="canvas-shell__meta">
+          <span className="legend">{modeLabel}</span>
           <span className="legend">
-            {editorMode === "draw-element" && drawKind
-              ? `${catalogItems.find((item) => item.kind === drawKind)?.label ?? drawKind} 그리기 모드`
-              : "선택 모드"}
+            {layout.room.width} x {layout.room.height}cm
           </span>
-        )}
+        </div>
       </div>
 
       <svg
+        id={svgId}
         ref={svgRef}
         className="floor-canvas"
         viewBox={`0 0 ${layout.room.width} ${layout.room.height}`}
@@ -576,10 +586,34 @@ export const CanvasEditor = ({
 
         {roomPath ? <path d={roomPath} className="room-boundary-path" /> : null}
 
-        {roomPath ? (
+        {showReviewOverlay && roomPath ? (
           <g clipPath="url(#room-clip)">
-            <rect x={mainBand.x} y={mainBand.y} width={mainBand.width} height={mainBand.height} className="corridor-band corridor-band--main" />
-            <rect x={subBand.x} y={subBand.y} width={subBand.width} height={subBand.height} className="corridor-band corridor-band--sub" />
+            <rect x={mainBand.x} y={mainBand.y} width={mainBand.width} height={mainBand.height} className={mainBandTone} />
+            <rect x={subBand.x} y={subBand.y} width={subBand.width} height={subBand.height} className={subBandTone} />
+            {doorFrontZones.map((zone) => (
+              <rect
+                key={zone.id}
+                x={zone.x}
+                y={zone.y}
+                width={zone.width}
+                height={zone.height}
+                className="review-zone review-zone--danger"
+                rx={6}
+                ry={6}
+              />
+            ))}
+            {restrictedDoorZones.map((zone) => (
+              <rect
+                key={`${zone.id}-restricted`}
+                x={zone.x}
+                y={zone.y}
+                width={zone.width}
+                height={zone.height}
+                className="review-zone review-zone--warning"
+                rx={6}
+                ry={6}
+              />
+            ))}
           </g>
         ) : null}
 
@@ -603,9 +637,7 @@ export const CanvasEditor = ({
             <text x={roomDraftPoints[0].x + 12} y={roomDraftPoints[0].y - 12} className="draft-label">
               벽 작성 중
             </text>
-            {roomDraftPoints.length >= 3 ? (
-              <circle cx={roomDraftPoints[0].x} cy={roomDraftPoints[0].y} r={12} className="room-vertex room-vertex--close" />
-            ) : null}
+            {roomDraftPoints.length >= 3 ? <circle cx={roomDraftPoints[0].x} cy={roomDraftPoints[0].y} r={12} className="room-vertex room-vertex--close" /> : null}
           </>
         ) : null}
 
@@ -613,10 +645,12 @@ export const CanvasEditor = ({
           const selected = selectedElementId === element.id;
           const width = element.rotation === 90 || element.rotation === 270 ? element.height : element.width;
           const height = element.rotation === 90 || element.rotation === 270 ? element.width : element.height;
+          const severity = violationElementSeverity.get(element.id);
 
           return (
             <g key={element.id} transform={`translate(${element.x}, ${element.y})`} style={{ opacity: element.opacity ?? 1 }}>
-              <FurnitureVisual element={element} width={width} height={height} selected={selected} />
+              {showReviewOverlay && severity ? <rect x={-4} y={-4} width={width + 8} height={height + 8} className={severity === "critical" ? "element-review-halo element-review-halo--danger" : "element-review-halo element-review-halo--warning"} rx={10} ry={10} /> : null}
+              <FurnitureVisual element={element} width={width} height={height} selected={selected} severity={severity} />
               <rect
                 x={0}
                 y={0}
@@ -642,6 +676,13 @@ export const CanvasEditor = ({
           </g>
         ) : null}
       </svg>
+
+      {layout.elements.length === 0 && editorMode === "select" ? (
+        <div className="canvas-shell__empty">
+          <strong>아직 배치된 요소가 없습니다.</strong>
+          <p>하단의 추가 버튼으로 문, 창문, 가구를 배치해보세요.</p>
+        </div>
+      ) : null}
     </section>
   );
 };

@@ -7,6 +7,7 @@ export type ObjectKind =
   | "chair"
   | "storage"
   | "equipment"
+  | "board"
   | "door"
   | "window"
   | "pillar"
@@ -78,7 +79,7 @@ export interface RoomStructureElement extends BaseElement {
 }
 
 export interface SpaceObjectElement extends BaseElement {
-  kind: "bed" | "locker" | "desk" | "chair" | "storage" | "equipment";
+  kind: "bed" | "locker" | "desk" | "chair" | "storage" | "equipment" | "board";
   category: "furniture";
 }
 
@@ -110,6 +111,7 @@ export interface SpaceLayout {
   id: string;
   name: string;
   description: string;
+  layoutCategory?: string;
   room: Room;
   elements: LayoutElement[];
   ruleSetId: string;
@@ -218,3 +220,7 @@ export interface SuggestionResult {
 }
 
 export type AutoLayoutProfile = "regulation-first" | "movement-first" | "capacity-first";
+
+export type WorkflowStep = "space" | "room" | "openings" | "furniture" | "review";
+
+export type BottomSheetMode = "space-type" | "room-shape" | "object-picker" | "selection-actions" | "review-summary" | "export";

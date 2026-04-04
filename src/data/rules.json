@@ -8,7 +8,7 @@
       "name": "객체 충돌 금지",
       "type": "collision_constraint",
       "target": "layout_elements",
-      "targetKinds": ["bed", "locker", "desk", "chair", "storage", "equipment", "pillar"],
+      "targetKinds": ["bed", "locker", "desk", "chair", "storage", "equipment", "board", "pillar"],
       "message": "가구와 구조물 간 충돌이 없어야 합니다.",
       "severity": "critical"
     },
@@ -40,7 +40,7 @@
       "type": "door_clearance",
       "target": "door_front",
       "distance": 100,
-      "applyToKinds": ["bed", "locker", "desk", "chair", "storage", "equipment"],
+      "applyToKinds": ["bed", "locker", "desk", "chair", "storage", "equipment", "board"],
       "message": "출입문 전방 100cm 이내에는 장애물이 없어야 합니다.",
       "severity": "critical"
     },

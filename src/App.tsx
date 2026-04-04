@@ -1,125 +1,178 @@
 import { useEffect, useMemo, useState } from "react";
-import { createLayoutNarrative, draftRulesFromText, summarizeRegulationText } from "./ai/explainer";
+import { createLayoutNarrative } from "./ai/explainer";
+import { ActionBar } from "./components/ActionBar";
+import { BottomSheet } from "./components/BottomSheet";
 import { CanvasEditor } from "./components/CanvasEditor";
-import { LayoutPicker, LayoutTemplateOption } from "./components/LayoutPicker";
-import { RightPanel } from "./components/RightPanel";
-import { ShellOpacityMode, ThreeDPreview } from "./components/ThreeDPreview";
-import { Toolbar } from "./components/Toolbar";
+import { StepHeader } from "./components/StepHeader";
 import { catalogItems } from "./data/catalog";
-import {
-  createCustomTemplateLayout,
-  sampleBarracksLayout,
-  sampleOfficeLayout,
-  sampleStorageLayout
-} from "./data/sampleLayouts";
+import { sampleBarracksLayout, sampleOfficeLayout, sampleStorageLayout } from "./data/sampleLayouts";
+import { exportCanvasToPng } from "./engine/exportPng";
 import { generateRoomGptLayouts } from "./engine/autoLayout";
+import { buildRoomShapePreset, clampElementToRoom, generateElementId } from "./engine/geometry";
 import { buildImprovementSuggestions } from "./engine/layoutSuggestions";
-import { clampElementToRoom, generateElementId } from "./engine/geometry";
 import { getDefaultRuleSet, reviewLayout } from "./engine/ruleEngine";
-import { EditorMode, LayoutElement, ObjectKind, Point, RoomBoundarySegment, SpaceLayout } from "./types/layout";
+import {
+  BottomSheetMode,
+  EditorMode,
+  LayoutElement,
+  ObjectKind,
+  RoomDrawTool,
+  RoomShapePreset,
+  SpaceLayout,
+  WorkflowStep
+} from "./types/layout";
 
-const regulationInput = `주통로는 120cm 이상 확보한다.
-보조통로는 80cm 이상 확보한다.
-출입문 전방 100cm 이내에는 장애물을 두지 않는다.
-침상 간 최소 60cm 이격거리를 유지한다.
-장비함은 출입문 주변 120cm 이내에 두지 않는다.`;
+type SpaceTypeId = "barracks" | "command" | "lounge" | "storage" | "custom";
 
-const initialLayout = structuredClone(sampleBarracksLayout);
+interface SpaceTypeOption {
+  id: SpaceTypeId;
+  label: string;
+  description: string;
+  template: "barracks" | "office" | "storage" | "custom";
+}
 
-const templateOptions: LayoutTemplateOption[] = [
+const spaceTypeOptions: SpaceTypeOption[] = [
   {
     id: "barracks",
-    title: "생활관",
-    subtitle: "8인 생활관 기준",
-    description: "침상과 관물대 중심 배치를 빠르게 검토할 수 있는 기본 템플릿입니다.",
-    highlights: ["생활관형 비정형 외곽선", "침상 8개/관물대 배치", "통로·문 전방 규정 검토"],
-    previewLabel: "Barracks",
-    create: () => structuredClone(sampleBarracksLayout)
+    label: "생활관",
+    description: "침상과 캐비닛 중심 생활 공간",
+    template: "barracks"
   },
   {
-    id: "office",
-    title: "사무실",
-    subtitle: "행정반/대기실형",
-    description: "책상, 의자, 서류함 중심의 업무 공간 템플릿입니다.",
-    highlights: ["업무 좌석 중심", "사무용 가구 배치", "문 접근성과 동선 확인"],
-    previewLabel: "Office",
-    create: () => structuredClone(sampleOfficeLayout)
+    id: "command",
+    label: "지휘통제실",
+    description: "책상, 상황판, 장비 배치 중심 공간",
+    template: "office"
+  },
+  {
+    id: "lounge",
+    label: "간부휴게실",
+    description: "책상, 의자, 수납을 간단히 검토하는 공간",
+    template: "office"
   },
   {
     id: "storage",
-    title: "창고",
-    subtitle: "장비 보관형",
-    description: "장비함, 보관함, 점검 통로를 중심으로 시작하는 안전형 템플릿입니다.",
-    highlights: ["장비 보관 시나리오", "대형 가구 배치", "창고 안전 여유 공간 검토"],
-    previewLabel: "Storage",
-    create: () => structuredClone(sampleStorageLayout)
+    label: "창고",
+    description: "장비함과 점검 통로 중심 공간",
+    template: "storage"
   },
   {
     id: "custom",
-    title: "사용자 정의",
-    subtitle: "빈 방 윤곽선 그리기",
-    description: "직선 벽과 곡선 벽을 골라가며 실제 건물 윤곽처럼 방 외곽을 직접 그릴 수 있습니다.",
-    highlights: ["직선/곡선 벽 선택", "가구 직접 배치", "비정형 공간 설계"],
-    previewLabel: "Custom",
-    create: () => createCustomTemplateLayout()
+    label: "사용자 정의",
+    description: "공간 유형만 정하고 구조를 직접 만드는 공간",
+    template: "custom"
   }
 ];
 
-const scalePoint = (point: Point, scaleX: number, scaleY: number): Point => ({
-  x: Math.round(point.x * scaleX),
-  y: Math.round(point.y * scaleY)
-});
+const workflowMeta: Record<WorkflowStep, { label: string; hint: string; primaryLabel: string }> = {
+  space: {
+    label: "공간 선택",
+    hint: "공간 유형을 선택하면 구조 생성 단계로 자연스럽게 이어집니다.",
+    primaryLabel: "공간 유형 선택"
+  },
+  room: {
+    label: "구조 생성",
+    hint: "사각형 또는 벽 그리기 도구로 실제 공간 외곽을 잡아주세요.",
+    primaryLabel: "문/창문 배치로"
+  },
+  openings: {
+    label: "문/창문 배치",
+    hint: "출입문과 창문, 고정 구조물을 먼저 두면 이후 검토가 더 정확해집니다.",
+    primaryLabel: "가구 배치로"
+  },
+  furniture: {
+    label: "가구 배치",
+    hint: "침상, 책상, 캐비닛, 상황판을 두고 손가락으로 바로 위치를 조정해보세요.",
+    primaryLabel: "배치 검토"
+  },
+  review: {
+    label: "검토",
+    hint: "통로, 문 전방, 밀집도를 색상으로 확인하고 PNG로 바로 내보낼 수 있습니다.",
+    primaryLabel: "PNG 내보내기"
+  }
+};
 
-const scaleBoundarySegment = (segment: RoomBoundarySegment, scaleX: number, scaleY: number): RoomBoundarySegment => {
-  if (segment.kind === "line") {
-    return {
-      ...segment,
-      start: scalePoint(segment.start, scaleX, scaleY),
-      end: scalePoint(segment.end, scaleX, scaleY)
-    };
+const openingKinds: ObjectKind[] = ["door", "window", "pillar"];
+const furnitureKinds: ObjectKind[] = ["bed", "locker", "desk", "chair", "storage", "equipment", "board"];
+
+const nextRotation = (rotation: LayoutElement["rotation"]): LayoutElement["rotation"] => {
+  if (rotation === 0) {
+    return 90;
   }
 
+  if (rotation === 90) {
+    return 180;
+  }
+
+  if (rotation === 180) {
+    return 270;
+  }
+
+  return 0;
+};
+
+const createBlankLayout = (option?: SpaceTypeOption): SpaceLayout => {
+  const base =
+    option?.template === "office"
+      ? structuredClone(sampleOfficeLayout)
+      : option?.template === "storage"
+        ? structuredClone(sampleStorageLayout)
+        : structuredClone(sampleBarracksLayout);
+
+  const label = option?.label ?? "신규 공간";
+
   return {
-    ...segment,
-    start: scalePoint(segment.start, scaleX, scaleY),
-    end: scalePoint(segment.end, scaleX, scaleY),
-    control: scalePoint(segment.control, scaleX, scaleY)
+    ...base,
+    id: `layout-${option?.id ?? "draft"}-${Math.random().toString(36).slice(2, 8)}`,
+    name: `${label} 배치안`,
+    description: `${label} 공간 배치 검토용 도면`,
+    layoutCategory: label,
+    room: {
+      ...base.room,
+      id: `room-${option?.id ?? "draft"}-${Math.random().toString(36).slice(2, 8)}`,
+      name: label
+    },
+    elements: []
   };
 };
 
 const App = () => {
   const ruleSet = useMemo(() => getDefaultRuleSet(), []);
-  const [layout, setLayout] = useState<SpaceLayout>(initialLayout);
-  const [showTemplatePicker, setShowTemplatePicker] = useState(true);
+  const [layout, setLayout] = useState<SpaceLayout>(() => createBlankLayout());
+  const [selectedSpaceType, setSelectedSpaceType] = useState<SpaceTypeOption>();
+  const [workflowStep, setWorkflowStep] = useState<WorkflowStep>("space");
+  const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode | null>("space-type");
   const [selectedElementId, setSelectedElementId] = useState<string>();
-  const [alternatives, setAlternatives] = useState<SpaceLayout[]>([]);
   const [editorMode, setEditorMode] = useState<EditorMode>("select");
-  const [drawKind, setDrawKind] = useState<ObjectKind>("bed");
-  const [shellOpacityMode, setShellOpacityMode] = useState<ShellOpacityMode>("opacity-1");
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 780 : false));
-  const [mobileView, setMobileView] = useState<"plan" | "three-d" | "analysis">("plan");
+  const [drawKind, setDrawKind] = useState<ObjectKind>("door");
+  const [roomDrawTool, setRoomDrawTool] = useState<RoomDrawTool>("line");
+  const [curveDirection, setCurveDirection] = useState<1 | -1>(1);
+  const [reviewOverlayVisible, setReviewOverlayVisible] = useState(false);
+  const [notice, setNotice] = useState<string>();
 
-  const review = useMemo(() => reviewLayout(layout, ruleSet), [layout, ruleSet]);
-  const suggestions = useMemo(() => buildImprovementSuggestions(layout, review), [layout, review]);
-  const narrative = useMemo(() => createLayoutNarrative(layout, review), [layout, review]);
   const selectedElement = layout.elements.find((element) => element.id === selectedElementId);
-  const regulationSummary = summarizeRegulationText(regulationInput);
-  const draftRules = draftRulesFromText(regulationInput);
+  const review = useMemo(() => reviewLayout(layout, ruleSet), [layout, ruleSet]);
+  const suggestions = useMemo(() => buildImprovementSuggestions(layout, review).slice(0, 3), [layout, review]);
+  const narrative = useMemo(() => createLayoutNarrative(layout, review), [layout, review]);
+  const alternatives = useMemo(
+    () => (workflowStep === "review" ? generateRoomGptLayouts(layout).slice(0, 3) : []),
+    [layout, workflowStep]
+  );
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return undefined;
+    setReviewOverlayVisible(workflowStep === "review");
+  }, [workflowStep]);
+
+  useEffect(() => {
+    if (!selectedElementId) {
+      if (bottomSheetMode === "selection-actions") {
+        setBottomSheetMode(workflowStep === "review" ? "review-summary" : null);
+      }
+      return;
     }
 
-    const mediaQuery = window.matchMedia("(max-width: 780px)");
-    const syncViewport = (event?: MediaQueryListEvent) => {
-      setIsMobile(event ? event.matches : mediaQuery.matches);
-    };
-
-    syncViewport();
-    mediaQuery.addEventListener("change", syncViewport);
-    return () => mediaQuery.removeEventListener("change", syncViewport);
-  }, []);
+    setBottomSheetMode("selection-actions");
+  }, [bottomSheetMode, selectedElementId, workflowStep]);
 
   const updateElement = (elementId: string, patch: Partial<LayoutElement>) => {
     setLayout((currentLayout) => ({
@@ -140,55 +193,7 @@ const App = () => {
     }));
   };
 
-  const updateElementHeight = (elementId: string, value: number) => {
-    const target = layout.elements.find((element) => element.id === elementId);
-    if (!target) {
-      return;
-    }
-
-    updateElement(elementId, {
-      metadata: {
-        ...target.metadata,
-        volumeHeight: Math.max(20, Math.min(260, value))
-      }
-    });
-  };
-
-  const updateRoom = (field: "width" | "height" | "wallHeight", value: number) => {
-    setLayout((currentLayout) => {
-      if (field === "wallHeight") {
-        return {
-          ...currentLayout,
-          room: {
-            ...currentLayout.room,
-            wallHeight: Math.max(180, Math.min(420, value))
-          }
-        };
-      }
-
-      const nextWidth = field === "width" ? Math.max(300, value) : currentLayout.room.width;
-      const nextHeight = field === "height" ? Math.max(300, value) : currentLayout.room.height;
-      const scaleX = nextWidth / currentLayout.room.width;
-      const scaleY = nextHeight / currentLayout.room.height;
-      const outline = currentLayout.room.outline.map((point) => scalePoint(point, scaleX, scaleY));
-      const boundarySegments = currentLayout.room.boundarySegments.map((segment) => scaleBoundarySegment(segment, scaleX, scaleY));
-      const nextRoom = {
-        ...currentLayout.room,
-        width: nextWidth,
-        height: nextHeight,
-        outline,
-        boundarySegments
-      };
-
-      return {
-        ...currentLayout,
-        room: nextRoom,
-        elements: currentLayout.elements.map((element) => clampElementToRoom(element, nextRoom))
-      };
-    });
-  };
-
-  const updateRoomGeometry = (outline: Point[], boundarySegments: RoomBoundarySegment[]) => {
+  const updateRoomGeometry = (outline: SpaceLayout["room"]["outline"], boundarySegments: SpaceLayout["room"]["boundarySegments"]) => {
     setLayout((currentLayout) => ({
       ...currentLayout,
       room: {
@@ -204,11 +209,6 @@ const App = () => {
         })
       )
     }));
-    setEditorMode("select");
-  };
-
-  const addElement = (kind: ObjectKind) => {
-    createElement(kind, { x: 40, y: 40 });
   };
 
   const createElement = (
@@ -225,13 +225,16 @@ const App = () => {
       return;
     }
 
+    const x = options?.x ?? Math.max(20, layout.room.width / 2 - catalog.width / 2);
+    const y = options?.y ?? Math.max(20, layout.room.height / 2 - catalog.height / 2);
+
     const baseElement: LayoutElement = {
       id: generateElementId(kind),
       name: `${catalog.label} ${layout.elements.filter((element) => element.kind === kind).length + 1}`,
       kind: catalog.kind as LayoutElement["kind"],
       category: catalog.category,
-      x: options?.x ?? 40,
-      y: options?.y ?? 40,
+      x,
+      y,
       width: options?.width ?? catalog.width,
       height: options?.height ?? catalog.height,
       rotation: 0,
@@ -249,239 +252,443 @@ const App = () => {
       elements: [...currentLayout.elements, nextElement]
     }));
     setSelectedElementId(nextElement.id);
-  };
-
-  const resetLayout = () => {
-    setLayout(structuredClone(sampleBarracksLayout));
-    setAlternatives([]);
-    setSelectedElementId(undefined);
     setEditorMode("select");
   };
 
-  const generateAlternatives = () => {
-    setAlternatives(generateRoomGptLayouts(layout));
+  const deleteSelectedElement = () => {
+    if (!selectedElement || selectedElement.locked) {
+      return;
+    }
+
+    setLayout((currentLayout) => ({
+      ...currentLayout,
+      elements: currentLayout.elements.filter((element) => element.id !== selectedElement.id)
+    }));
+    setSelectedElementId(undefined);
   };
 
-  const applySmartLayout = () => {
-    const generated = generateRoomGptLayouts(layout);
-    setAlternatives(generated);
+  const rotateSelectedElement = () => {
+    if (!selectedElement) {
+      return;
+    }
 
-    const best = [...generated].sort((a, b) => {
-      const reviewA = reviewLayout(a, ruleSet);
-      const reviewB = reviewLayout(b, ruleSet);
+    updateElement(selectedElement.id, {
+      rotation: nextRotation(selectedElement.rotation)
+    });
+  };
 
-      if (reviewB.compliantScore !== reviewA.compliantScore) {
-        return reviewB.compliantScore - reviewA.compliantScore;
+  const chooseSpaceType = (option: SpaceTypeOption) => {
+    setSelectedSpaceType(option);
+    setLayout(createBlankLayout(option));
+    setSelectedElementId(undefined);
+    setWorkflowStep("room");
+    setBottomSheetMode("room-shape");
+    setEditorMode("draw-room");
+    setDrawKind("door");
+    setNotice(`${option.label} 구조를 먼저 잡아보세요.`);
+  };
+
+  const openSheetForCurrentStep = () => {
+    if (selectedElementId) {
+      setBottomSheetMode("selection-actions");
+      return;
+    }
+
+    if (workflowStep === "space") {
+      setBottomSheetMode("space-type");
+      return;
+    }
+
+    if (workflowStep === "room") {
+      setBottomSheetMode("room-shape");
+      return;
+    }
+
+    if (workflowStep === "review") {
+      setBottomSheetMode("review-summary");
+      return;
+    }
+
+    setBottomSheetMode("object-picker");
+  };
+
+  const advanceStep = async () => {
+    if (workflowStep === "space") {
+      setBottomSheetMode("space-type");
+      setNotice("공간 유형을 먼저 선택해주세요.");
+      return;
+    }
+
+    if (workflowStep === "room") {
+      if (layout.room.outline.length < 3 || layout.room.boundarySegments.length < 3) {
+        setNotice("닫힌 공간 외곽선이 있어야 다음 단계로 이동할 수 있습니다.");
+        return;
       }
 
-      return reviewA.violations.length - reviewB.violations.length;
-    })[0];
-
-    if (best) {
-      setLayout(structuredClone(best));
+      setWorkflowStep("openings");
+      setBottomSheetMode("object-picker");
+      setDrawKind("door");
+      setEditorMode("select");
       setSelectedElementId(undefined);
+      setNotice("문과 창문을 배치해주세요.");
+      return;
+    }
+
+    if (workflowStep === "openings") {
+      const hasDoor = layout.elements.some((element) => element.kind === "door");
+      setWorkflowStep("furniture");
+      setBottomSheetMode("object-picker");
+      setDrawKind("bed");
+      setEditorMode("select");
+      setSelectedElementId(undefined);
+      setNotice(hasDoor ? "가구를 추가해보세요." : "문이 없는 상태로 가구 배치 단계로 이동했습니다. 필요하면 문을 먼저 추가하세요.");
+      return;
+    }
+
+    if (workflowStep === "furniture") {
+      setWorkflowStep("review");
+      setBottomSheetMode("review-summary");
+      setEditorMode("select");
+      setSelectedElementId(undefined);
+      setNotice("검토 결과를 확인하고 PNG로 내보낼 수 있습니다.");
+      return;
+    }
+
+    const svgElement = document.getElementById("layout-export-surface") as SVGSVGElement | null;
+    if (!svgElement) {
+      setNotice("도면을 내보낼 수 있는 캔버스를 찾지 못했습니다.");
+      return;
+    }
+
+    try {
+      await exportCanvasToPng({
+        svgElement,
+        fileName: `${selectedSpaceType?.label ?? "space-layout"}-${Date.now()}.png`,
+        title: `${selectedSpaceType?.label ?? layout.room.name} · ${layout.name}`,
+        subtitle: `규정 준수율 ${review.compliantScore}% · 위반 ${review.violations.length}건`
+      });
+      setBottomSheetMode("export");
+      setNotice("PNG 이미지를 다운로드했습니다.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "PNG 내보내기에 실패했습니다.");
     }
   };
 
-  const startBlank = () => {
-    const customLayout = createCustomTemplateLayout();
-    setLayout(customLayout);
-    setSelectedElementId(undefined);
-    setAlternatives([]);
-    setEditorMode("draw-room");
-    setMobileView("plan");
-    setShowTemplatePicker(false);
+  const currentHint = workflowMeta[workflowStep].hint;
+  const primaryLabel = workflowMeta[workflowStep].primaryLabel;
+  const canDelete = Boolean(selectedElement && !selectedElement.locked);
+  const canRotate = Boolean(selectedElement);
+  const primaryDisabled = false;
+  const currentPickerKinds = workflowStep === "openings" ? openingKinds : furnitureKinds;
+
+  const addKindFromSheet = (kind: ObjectKind) => {
+    setDrawKind(kind);
+    createElement(kind);
+    setBottomSheetMode(null);
   };
 
-  const explanatoryPanel = (
-    <section className="panel-card system-card">
-      <h3>LLM 역할 분리 예시</h3>
-      <p>
-        아래 내용은 실제 판정이 아니라, 규정 문장을 구조화된 룰 초안으로 바꾸기 위한 보조 정보입니다. 최종 합불 판정은 상단의 룰 엔진
-        계산 결과를 기준으로 합니다.
-      </p>
-      <div className="two-column">
-        <div>
-          <h4>규정 요약</h4>
-          <ul className="list-block">
-            {regulationSummary.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h4>구조화 룰 초안</h4>
-          <pre>{JSON.stringify(draftRules, null, 2)}</pre>
-        </div>
-      </div>
-    </section>
-  );
-
-  const planPanel = (
-    <section className="workspace">
-      <CanvasEditor
-        layout={layout}
-        selectedElementId={selectedElementId}
-        editorMode={editorMode}
-        drawKind={drawKind}
-        onSelectElement={setSelectedElementId}
-        onUpdateElement={updateElement}
-        onCreateElement={(kind, rect) => createElement(kind, rect)}
-        onUpdateRoomGeometry={updateRoomGeometry}
-      />
-    </section>
-  );
-
-  const threeDPanel = (
-    <section className="workspace">
-      <ThreeDPreview
-        layout={layout}
-        selectedElement={selectedElement}
-        selectedElementId={selectedElementId}
-        shellOpacityMode={shellOpacityMode}
-        onChangeShellOpacityMode={setShellOpacityMode}
-        onUpdateRoomWallHeight={(value) => updateRoom("wallHeight", value)}
-        onUpdateElementHeight={updateElementHeight}
-      />
-    </section>
-  );
-
-  const analysisPanel = (
-    <section className="workspace">
-      <RightPanel
-        layout={layout}
-        ruleSet={ruleSet}
-        selectedElement={selectedElement}
-        review={review}
-        narrative={narrative}
-        suggestions={suggestions}
-        alternatives={alternatives}
-        onUpdateRoom={updateRoom}
-        onUpdateElement={updateElement}
-        onChooseAlternative={(alternative) => {
-          setLayout(structuredClone(alternative));
-          setSelectedElementId(undefined);
-          setMobileView("plan");
-        }}
-      />
-      {explanatoryPanel}
-    </section>
-  );
+  const applyRoomPreset = (preset: RoomShapePreset) => {
+    const geometry = buildRoomShapePreset(preset, layout.room.width, layout.room.height);
+    updateRoomGeometry(geometry.outline, geometry.boundarySegments);
+    setEditorMode("draw-room");
+    setNotice(`${preset === "rectangle" ? "사각형" : preset === "l-shape" ? "L자" : "U자"} 구조를 적용했습니다.`);
+  };
 
   return (
     <div className="app-shell">
-      {showTemplatePicker ? (
-        <LayoutPicker
-          options={templateOptions}
-          onSelect={(nextLayout) => {
-            setLayout(nextLayout);
-            setSelectedElementId(undefined);
-            setAlternatives([]);
-            setEditorMode(nextLayout.elements.length === 0 ? "draw-room" : "select");
-            setMobileView("plan");
-            setShowTemplatePicker(false);
-          }}
-        />
-      ) : null}
-
-      <Toolbar
-        roomSizeLabel={`${layout.room.width} x ${layout.room.height}cm`}
-        elementCount={layout.elements.length}
-        ruleCount={ruleSet.rules.length}
-        isMobile={isMobile}
-        editorMode={editorMode}
-        drawKind={drawKind}
-        onAddElement={addElement}
-        onSetDrawKind={setDrawKind}
-        onSetEditorMode={setEditorMode}
-        onOpenTemplatePicker={() => setShowTemplatePicker(true)}
-        onStartBlank={startBlank}
-        onReset={resetLayout}
-        onReview={() => setLayout((current) => ({ ...current }))}
-        onGenerateAlternatives={generateAlternatives}
-        onApplySmartLayout={applySmartLayout}
+      <StepHeader
+        currentStep={workflowStep}
+        currentHint={currentHint}
+        selectedSpaceLabel={selectedSpaceType?.label}
+        onChangeSpace={() => {
+          setWorkflowStep("space");
+          setBottomSheetMode("space-type");
+          setSelectedElementId(undefined);
+          setNotice("다른 공간 유형을 선택할 수 있습니다.");
+        }}
       />
 
-      {!showTemplatePicker && isMobile ? (
-        <nav className="mobile-tabs" aria-label="모바일 작업 전환">
-          <button
-            className={mobileView === "plan" ? "mobile-tabs__button mobile-tabs__button--active" : "mobile-tabs__button"}
-            onClick={() => setMobileView("plan")}
-            type="button"
-          >
-            도면
-          </button>
-          <button
-            className={mobileView === "three-d" ? "mobile-tabs__button mobile-tabs__button--active" : "mobile-tabs__button"}
-            onClick={() => setMobileView("three-d")}
-            type="button"
-          >
-            3D
-          </button>
-          <button
-            className={mobileView === "analysis" ? "mobile-tabs__button mobile-tabs__button--active" : "mobile-tabs__button"}
-            onClick={() => setMobileView("analysis")}
-            type="button"
-          >
-            분석
-          </button>
-        </nav>
-      ) : null}
+      {notice ? <div className="notice-banner">{notice}</div> : null}
 
-      <main className="main-layout">
-        {isMobile ? (
-          mobileView === "plan" ? (
-            planPanel
-          ) : mobileView === "three-d" ? (
-            threeDPanel
-          ) : (
-            analysisPanel
-          )
-        ) : (
-          <>
-            <section className="workspace">
-              <CanvasEditor
-                layout={layout}
-                selectedElementId={selectedElementId}
-                editorMode={editorMode}
-                drawKind={drawKind}
-                onSelectElement={setSelectedElementId}
-                onUpdateElement={updateElement}
-                onCreateElement={(kind, rect) => createElement(kind, rect)}
-                onUpdateRoomGeometry={updateRoomGeometry}
-              />
+      <main className="planner-shell">
+        <section className="planner-stage">
+          {workflowStep === "space" && !selectedSpaceType ? (
+            <div className="stage-empty-card">
+              <strong>공간 유형을 선택해주세요.</strong>
+              <p>생활관, 지휘통제실, 간부휴게실, 창고 중 하나를 고르면 구조 생성 단계가 바로 열립니다.</p>
+              <button className="primary-button" onClick={() => setBottomSheetMode("space-type")} type="button">
+                공간 유형 고르기
+              </button>
+            </div>
+          ) : null}
 
-              <ThreeDPreview
-                layout={layout}
-                selectedElement={selectedElement}
-                selectedElementId={selectedElementId}
-                shellOpacityMode={shellOpacityMode}
-                onChangeShellOpacityMode={setShellOpacityMode}
-                onUpdateRoomWallHeight={(value) => updateRoom("wallHeight", value)}
-                onUpdateElementHeight={updateElementHeight}
-              />
-
-              {explanatoryPanel}
-            </section>
-
-            <RightPanel
-              layout={layout}
-              ruleSet={ruleSet}
-              selectedElement={selectedElement}
-              review={review}
-              narrative={narrative}
-              suggestions={suggestions}
-              alternatives={alternatives}
-              onUpdateRoom={updateRoom}
-              onUpdateElement={updateElement}
-              onChooseAlternative={(alternative) => {
-                setLayout(structuredClone(alternative));
-                setSelectedElementId(undefined);
-              }}
-            />
-          </>
-        )}
+          <CanvasEditor
+            layout={layout}
+            selectedElementId={selectedElementId}
+            editorMode={editorMode}
+            drawKind={drawKind}
+            helperText={currentHint}
+            roomDrawTool={roomDrawTool}
+            curveDirection={curveDirection}
+            review={review}
+            showReviewOverlay={reviewOverlayVisible}
+            onSelectElement={setSelectedElementId}
+            onUpdateElement={updateElement}
+            onCreateElement={(kind, rect) => createElement(kind, rect)}
+            onUpdateRoomGeometry={updateRoomGeometry}
+          />
+        </section>
       </main>
+
+      <ActionBar
+        addActive={bottomSheetMode === "space-type" || bottomSheetMode === "room-shape" || bottomSheetMode === "object-picker"}
+        moveActive={editorMode === "select"}
+        canRotate={canRotate}
+        canDelete={canDelete}
+        primaryDisabled={primaryDisabled}
+        primaryLabel={primaryLabel}
+        onAdd={openSheetForCurrentStep}
+        onMove={() => {
+          setEditorMode("select");
+          if (selectedElementId) {
+            setBottomSheetMode("selection-actions");
+          }
+        }}
+        onRotate={rotateSelectedElement}
+        onDelete={deleteSelectedElement}
+        onPrimary={() => {
+          void advanceStep();
+        }}
+      />
+
+      <BottomSheet
+        open={bottomSheetMode === "space-type"}
+        title="공간 유형을 선택해주세요"
+        subtitle="공간 특성에 맞는 기본 구조와 추천 배치 흐름을 준비합니다."
+        onClose={() => setBottomSheetMode(null)}
+      >
+        <div className="sheet-option-grid">
+          {spaceTypeOptions.map((option) => (
+            <button key={option.id} className="sheet-option-card" onClick={() => chooseSpaceType(option)} type="button">
+              <strong>{option.label}</strong>
+              <p>{option.description}</p>
+            </button>
+          ))}
+        </div>
+      </BottomSheet>
+
+      <BottomSheet
+        open={bottomSheetMode === "room-shape"}
+        title="방 형태를 선택하거나 그려주세요"
+        subtitle="기본 도형을 적용한 뒤 직선 벽 또는 곡선 벽으로 실제 구조를 다듬을 수 있습니다."
+        onClose={() => setBottomSheetMode(null)}
+      >
+        <div className="sheet-section">
+          <span className="sheet-section__label">기본 형태</span>
+          <div className="sheet-inline-grid">
+            {(["rectangle", "l-shape", "u-shape"] as RoomShapePreset[]).map((preset) => (
+              <button key={preset} className="sheet-chip" onClick={() => applyRoomPreset(preset)} type="button">
+                {preset === "rectangle" ? "사각형" : preset === "l-shape" ? "L자" : "U자"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="sheet-section">
+          <span className="sheet-section__label">벽 그리기</span>
+          <div className="sheet-inline-grid">
+            <button className={roomDrawTool === "line" ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => {
+              setRoomDrawTool("line");
+              setEditorMode("draw-room");
+            }} type="button">
+              직선 벽
+            </button>
+            <button className={roomDrawTool === "arc" ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => {
+              setRoomDrawTool("arc");
+              setEditorMode("draw-room");
+            }} type="button">
+              곡선 벽
+            </button>
+            <button className={curveDirection === 1 ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => setCurveDirection(1)} type="button">
+              곡률 A
+            </button>
+            <button className={curveDirection === -1 ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => setCurveDirection(-1)} type="button">
+              곡률 B
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet
+        open={bottomSheetMode === "object-picker"}
+        title={workflowStep === "openings" ? "문과 창문을 추가해주세요" : "배치 요소를 추가해주세요"}
+        subtitle={workflowStep === "openings" ? "문, 창문, 기둥을 먼저 두면 검토 정확도가 높아집니다." : "필요한 가구를 추가한 뒤 손가락으로 위치를 조정할 수 있습니다."}
+        onClose={() => setBottomSheetMode(null)}
+      >
+        <div className="sheet-option-grid">
+          {currentPickerKinds.map((kind) => {
+            const item = catalogItems.find((catalogItem) => catalogItem.kind === kind);
+            if (!item) {
+              return null;
+            }
+
+            return (
+              <button key={kind} className="sheet-option-card" onClick={() => addKindFromSheet(kind)} type="button">
+                <strong>{item.label}</strong>
+                <p>
+                  기본 크기 {item.width} x {item.height}cm
+                </p>
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
+
+      <BottomSheet
+        open={bottomSheetMode === "selection-actions" && Boolean(selectedElement)}
+        title={selectedElement ? `${selectedElement.name} 편집` : "선택 요소 편집"}
+        subtitle="이름, 크기, 회전만 간단히 다루고 세부 속성은 최대한 숨깁니다."
+        onClose={() => {
+          setBottomSheetMode(null);
+          setSelectedElementId(undefined);
+        }}
+      >
+        {selectedElement ? (
+          <div className="selection-form">
+            <label>
+              이름
+              <input
+                type="text"
+                value={selectedElement.name}
+                onChange={(event) => updateElement(selectedElement.id, { name: event.target.value })}
+              />
+            </label>
+            <div className="selection-form__row">
+              <label>
+                너비(cm)
+                <input
+                  type="number"
+                  value={selectedElement.width}
+                  onChange={(event) => updateElement(selectedElement.id, { width: Number(event.target.value) || selectedElement.width })}
+                />
+              </label>
+              <label>
+                높이(cm)
+                <input
+                  type="number"
+                  value={selectedElement.height}
+                  onChange={(event) => updateElement(selectedElement.id, { height: Number(event.target.value) || selectedElement.height })}
+                />
+              </label>
+            </div>
+            <div className="sheet-inline-grid">
+              <button className="sheet-chip" onClick={rotateSelectedElement} type="button">
+                90도 회전
+              </button>
+              <button className="sheet-chip" disabled={!canDelete} onClick={deleteSelectedElement} type="button">
+                삭제
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </BottomSheet>
+
+      <BottomSheet
+        open={bottomSheetMode === "review-summary"}
+        title="배치 검토 결과"
+        subtitle="핵심 위반과 권고만 우선 보여주고, 상세 수치는 최소한으로 유지합니다."
+        onClose={() => setBottomSheetMode(null)}
+      >
+        <div className="review-summary">
+          <div className="review-summary__hero">
+            <div>
+              <span>규정 준수율</span>
+              <strong>{review.compliantScore}%</strong>
+            </div>
+            <div>
+              <span>충족 규칙</span>
+              <strong>
+                {review.passedRules}/{review.totalRules}
+              </strong>
+            </div>
+          </div>
+
+          <p className="review-summary__text">{narrative.summary}</p>
+
+          <section className="sheet-section">
+            <span className="sheet-section__label">주요 위반</span>
+            <div className="review-list">
+              {review.violations.length === 0 ? (
+                <div className="review-item review-item--safe">
+                  <strong>위반 항목이 없습니다.</strong>
+                  <p>현재 배치는 룰 엔진 기준에서 주요 규칙을 충족하고 있습니다.</p>
+                </div>
+              ) : (
+                review.violations.slice(0, 3).map((violation) => (
+                  <div
+                    key={violation.id}
+                    className={
+                      violation.severity === "critical"
+                        ? "review-item review-item--danger"
+                        : violation.severity === "major"
+                          ? "review-item review-item--warning"
+                          : "review-item review-item--safe"
+                    }
+                  >
+                    <strong>{violation.message}</strong>
+                    <p>{violation.details}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="sheet-section">
+            <span className="sheet-section__label">개선 권고</span>
+            <div className="review-list">
+              {suggestions.slice(0, 3).map((suggestion) => (
+                <div key={suggestion.title} className="review-item">
+                  <strong>{suggestion.title}</strong>
+                  <p>{suggestion.description}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="sheet-section">
+            <span className="sheet-section__label">추천 배치안</span>
+            <div className="sheet-option-grid">
+              {alternatives.map((alternative) => (
+                <button
+                  key={alternative.id}
+                  className="sheet-option-card"
+                  onClick={() => {
+                    setLayout(structuredClone(alternative));
+                    setSelectedElementId(undefined);
+                    setNotice(`${alternative.name}을(를) 적용했습니다.`);
+                  }}
+                  type="button"
+                >
+                  <strong>{alternative.name}</strong>
+                  <p>{alternative.description}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet
+        open={bottomSheetMode === "export"}
+        title="PNG 내보내기 완료"
+        subtitle="현재 보이는 도면과 검토 오버레이를 하나의 PNG 이미지로 저장했습니다."
+        onClose={() => setBottomSheetMode(null)}
+      >
+        <div className="review-item review-item--safe">
+          <strong>다운로드가 시작되었습니다.</strong>
+          <p>캔버스 영역만 이미지로 저장되며, 공간 유형과 준수율 요약이 상단에 함께 들어갑니다.</p>
+        </div>
+      </BottomSheet>
     </div>
   );
 };
