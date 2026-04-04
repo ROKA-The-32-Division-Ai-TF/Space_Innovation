@@ -23,7 +23,6 @@ interface CanvasEditorProps {
   showReviewOverlay?: boolean;
   svgId?: string;
   onSelectElement: (elementId: string | undefined) => void;
-  onOpenElementActions: (elementId: string) => void;
   onUpdateElement: (elementId: string, patch: Partial<LayoutElement>) => void;
   onCreateElement: (kind: ObjectKind, rect: { x: number; y: number; width: number; height: number }) => void;
   onUpdateRoomGeometry: (outline: Point[], boundarySegments: RoomBoundarySegment[]) => void;
@@ -301,7 +300,6 @@ export const CanvasEditor = ({
   showReviewOverlay = false,
   svgId = "layout-export-surface",
   onSelectElement,
-  onOpenElementActions,
   onUpdateElement,
   onCreateElement,
   onUpdateRoomGeometry
@@ -593,11 +591,11 @@ export const CanvasEditor = ({
       </div>
 
       <div className="canvas-viewport">
+        <div className="canvas-stage" style={{ width: `${zoomLevel * 100}%` }}>
         <svg
           id={svgId}
           ref={svgRef}
           className="floor-canvas"
-          style={{ width: `${zoomLevel * 100}%` }}
           viewBox={`0 0 ${layout.room.width} ${layout.room.height}`}
           onPointerDown={handleCanvasPointerDown}
           onPointerMove={handlePointerMove}
@@ -688,7 +686,6 @@ export const CanvasEditor = ({
                   fill="transparent"
                   className={selected ? "shape shape--selected" : "shape"}
                   onPointerDown={(event) => handlePointerDown(event, element)}
-                  onDoubleClick={() => onOpenElementActions(element.id)}
                 />
                 <text x={12} y={20} className="shape-label">
                   {element.name}
@@ -706,6 +703,7 @@ export const CanvasEditor = ({
             </g>
           ) : null}
         </svg>
+        </div>
       </div>
 
       {layout.elements.length === 0 && editorMode === "select" ? (

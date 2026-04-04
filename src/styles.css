@@ -260,6 +260,11 @@ img {
   box-shadow: var(--shadow-soft);
 }
 
+.room-start-card--compact {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
 .room-start-card__copy {
   display: grid;
   gap: 6px;
@@ -438,6 +443,10 @@ img {
   border-radius: 12px;
   background: linear-gradient(180deg, rgba(248, 249, 245, 0.94), rgba(243, 245, 240, 0.96));
   -webkit-overflow-scrolling: touch;
+}
+
+.canvas-stage {
+  min-width: 100%;
 }
 
 .canvas-shell__empty {
@@ -646,6 +655,54 @@ img {
 .action-bar__button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
+}
+
+.side-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(10, 15, 12, 0.28);
+}
+
+.side-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(320px, calc(100vw - 28px));
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  border-right: 1px solid var(--line);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow-strong);
+}
+
+.side-menu__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.side-menu__header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.side-menu__header p {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.side-menu__body {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 14px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
 }
 
 .bottom-sheet-backdrop {
@@ -879,6 +936,71 @@ img {
   background: rgba(201, 63, 43, 0.08);
 }
 
+.app-shell--dark .step-header__brand,
+.app-shell--dark .stage-empty-card,
+.app-shell--dark .room-start-card,
+.app-shell--dark .canvas-shell,
+.app-shell--dark .bottom-sheet,
+.app-shell--dark .side-menu,
+.app-shell--dark .sheet-option-card,
+.app-shell--dark .sheet-chip,
+.app-shell--dark .review-item,
+.app-shell--dark .review-summary__hero > div,
+.app-shell--dark .action-bar,
+.app-shell--dark .action-bar__button,
+.app-shell--dark .header-link-button,
+.app-shell--dark .legend,
+.app-shell--dark .canvas-zoom-controls__button,
+.app-shell--dark .notice-banner {
+  color: var(--ink);
+}
+
+.app-shell--dark .step-header__brand,
+.app-shell--dark .stage-empty-card,
+.app-shell--dark .room-start-card,
+.app-shell--dark .canvas-shell,
+.app-shell--dark .bottom-sheet,
+.app-shell--dark .side-menu,
+.app-shell--dark .sheet-option-card,
+.app-shell--dark .sheet-chip,
+.app-shell--dark .review-item,
+.app-shell--dark .review-summary__hero > div,
+.app-shell--dark .action-bar__button,
+.app-shell--dark .header-link-button,
+.app-shell--dark .legend,
+.app-shell--dark .canvas-zoom-controls__button {
+  background: rgba(25, 31, 28, 0.98);
+  border-color: rgba(231, 236, 231, 0.12);
+}
+
+.app-shell--dark .action-bar {
+  background: rgba(18, 24, 21, 0.96);
+}
+
+.app-shell--dark .action-bar__button--primary,
+.app-shell--dark .primary-button {
+  background: #6f856a;
+  color: #111713;
+}
+
+.app-shell--dark .notice-banner {
+  background: rgba(111, 133, 106, 0.14);
+  border-color: rgba(111, 133, 106, 0.24);
+  color: #d8e2d5;
+}
+
+.app-shell--dark .canvas-viewport {
+  background: linear-gradient(180deg, rgba(29, 35, 32, 0.96), rgba(21, 26, 24, 0.98));
+}
+
+.app-shell--dark .floor-canvas {
+  background:
+    linear-gradient(rgba(197, 208, 203, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(197, 208, 203, 0.06) 1px, transparent 1px),
+    linear-gradient(180deg, #1b211e 0%, #151a18 100%);
+  background-size: 20px 20px, 20px 20px, auto;
+}
+
 @media (min-width: 700px) {
   .app-shell {
     padding-top: 22px;
@@ -979,6 +1101,10 @@ img {
 
   .room-start-card {
     padding: 14px;
+  }
+
+  .room-start-card--compact {
+    grid-template-columns: 1fr;
   }
 
   .room-action-row {

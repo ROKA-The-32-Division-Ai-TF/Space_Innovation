@@ -3,6 +3,7 @@ import { createLayoutNarrative } from "./ai/explainer";
 import { ActionBar } from "./components/ActionBar";
 import { BottomSheet } from "./components/BottomSheet";
 import { CanvasEditor } from "./components/CanvasEditor";
+import { SideMenu } from "./components/SideMenu";
 import { StepHeader } from "./components/StepHeader";
 import { catalogItems } from "./data/catalog";
 import { sampleBarracksLayout, sampleOfficeLayout, sampleStorageLayout } from "./data/sampleLayouts";
@@ -68,7 +69,7 @@ const workflowMeta: Record<WorkflowStep, { label: string; hint: string; primaryL
   space: {
     label: "공간 선택",
     hint: "공간 유형을 선택하면 구조 생성 단계로 자연스럽게 이어집니다.",
-    primaryLabel: "공간 유형 선택"
+    primaryLabel: "공간"
   },
   room: {
     label: "구조 생성",
@@ -141,7 +142,7 @@ const App = () => {
   const [layout, setLayout] = useState<SpaceLayout>(() => createBlankLayout());
   const [selectedSpaceType, setSelectedSpaceType] = useState<SpaceTypeOption>();
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>("space");
-  const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode | null>("space-type");
+  const [bottomSheetMode, setBottomSheetMode] = useState<BottomSheetMode | null>(null);
   const [selectedElementId, setSelectedElementId] = useState<string>();
   const [editorMode, setEditorMode] = useState<EditorMode>("select");
   const [drawKind, setDrawKind] = useState<ObjectKind>("door");
@@ -151,6 +152,7 @@ const App = () => {
   const [roomWidthInput, setRoomWidthInput] = useState(800);
   const [roomHeightInput, setRoomHeightInput] = useState(600);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [sideMenuOpen, setSideMenuOpen] = useState(false);
   const [notice, setNotice] = useState<string>();
 
   const selectedElement = layout.elements.find((element) => element.id === selectedElementId);
@@ -292,7 +294,19 @@ const App = () => {
     setDrawKind("door");
     setRoomWidthInput(nextLayout.room.width);
     setRoomHeightInput(nextLayout.room.height);
+    setSideMenuOpen(false);
     setNotice(`${option.label} 기본 사각형 도면을 불러왔습니다. 그대로 사용하거나 가로/세로를 먼저 맞춰보세요.`);
+  };
+
+  const resetCurrentLayout = () => {
+    const nextLayout = createBlankLayout(selectedSpaceType);
+    setLayout(nextLayout);
+    setSelectedElementId(undefined);
+    setEditorMode("select");
+    setBottomSheetMode(workflowStep === "space" ? "space-type" : null);
+    setRoomWidthInput(nextLayout.room.width);
+    setRoomHeightInput(nextLayout.room.height);
+    setNotice("현재 공간을 초기 상태로 되돌렸습니다.");
   };
 
   const openSheetForCurrentStep = () => {
@@ -321,7 +335,7 @@ const App = () => {
 
   const advanceStep = async () => {
     if (workflowStep === "space") {
-      setBottomSheetMode("space-type");
+      setSideMenuOpen(true);
       setNotice("공간 유형을 먼저 선택해주세요.");
       return;
     }
@@ -392,45 +406,33 @@ const App = () => {
     workflowStep === "space"
       ? [
           {
-            key: "space",
-            label: "공간",
-            active: bottomSheetMode === "space-type",
-            onClick: () => setBottomSheetMode("space-type")
+            key: "menu",
+            label: "메뉴",
+            active: sideMenuOpen,
+            onClick: () => setSideMenuOpen(true)
           }
         ]
       : workflowStep === "room"
         ? [
-            {
-              key: "shape",
-              label: "도면",
-              active: bottomSheetMode === "room-shape",
-              onClick: () => setBottomSheetMode("room-shape")
+          {
+              key: "menu",
+              label: "메뉴",
+              active: sideMenuOpen,
+              onClick: () => setSideMenuOpen(true)
             },
             {
-              key: "size",
-              label: "치수",
-              onClick: () => {
-                setBottomSheetMode(null);
-                setNotice("가로와 세로 수치를 먼저 맞춘 뒤 다음 단계로 넘어가면 가장 쉽습니다.");
-              }
-            },
-            {
-              key: "advanced",
-              label: "고급 벽 수정",
-              active: editorMode === "draw-room",
-              onClick: () => {
-                setBottomSheetMode("room-shape");
-                setNotice("특수 구조일 때만 직선 벽이나 곡선 벽 수정을 사용하세요.");
-              }
+              key: "reset",
+              label: "초기화",
+              onClick: resetCurrentLayout
             }
           ]
         : workflowStep === "review"
           ? [
               {
-                key: "review",
-                label: "결과",
-                active: bottomSheetMode === "review-summary",
-                onClick: () => setBottomSheetMode("review-summary")
+                key: "menu",
+                label: "메뉴",
+                active: sideMenuOpen,
+                onClick: () => setSideMenuOpen(true)
               },
               {
                 key: "select",
@@ -444,10 +446,10 @@ const App = () => {
             ]
           : [
               {
-                key: "add",
-                label: "추가",
-                active: bottomSheetMode === "object-picker",
-                onClick: openSheetForCurrentStep
+                key: "menu",
+                label: "메뉴",
+                active: sideMenuOpen,
+                onClick: () => setSideMenuOpen(true)
               },
               {
                 key: "select",
@@ -528,12 +530,16 @@ const App = () => {
         currentHint={currentHint}
         selectedSpaceLabel={selectedSpaceType?.label}
         onToggleTheme={() => {
-          setIsDarkMode((current) => !current);
-          setNotice(isDarkMode ? "기본 화면으로 전환했습니다." : "다크모드로 전환했습니다.");
+          setIsDarkMode((current) => {
+            const next = !current;
+            setNotice(next ? "다크모드로 전환했습니다." : "기본 화면으로 전환했습니다.");
+            return next;
+          });
         }}
         onChangeSpace={() => {
           setWorkflowStep("space");
-          setBottomSheetMode("space-type");
+          setBottomSheetMode(null);
+          setSideMenuOpen(true);
           setSelectedElementId(undefined);
           setNotice("다른 공간 유형을 선택할 수 있습니다.");
         }}
@@ -547,72 +553,21 @@ const App = () => {
             <div className="stage-empty-card">
               <strong>공간 유형을 선택해주세요.</strong>
               <p>생활관, 지휘통제실, 간부휴게실, 창고 중 하나를 고르면 구조 생성 단계가 바로 열립니다.</p>
-              <button className="primary-button" onClick={() => setBottomSheetMode("space-type")} type="button">
+              <button className="primary-button" onClick={() => setSideMenuOpen(true)} type="button">
                 공간 유형 고르기
               </button>
             </div>
           ) : null}
 
           {workflowStep === "room" ? (
-            <div className="room-start-card">
+            <div className="room-start-card room-start-card--compact">
               <div className="room-start-card__copy">
-                <strong>먼저 기본 도면을 정하세요.</strong>
-                <p>오토캐드처럼 정확하게 시작하려면 가로·세로 수치를 먼저 넣고, 필요할 때만 벽을 한 줄씩 수정하는 흐름이 가장 쉽습니다.</p>
+                <strong>도면 설정은 왼쪽 메뉴에서 진행합니다.</strong>
+                <p>기본 사각형, 치수 입력, 고급 벽 수정은 메뉴에서 열어 필요한 항목만 조정하세요.</p>
               </div>
-
-              <div className="room-dimension-row">
-                <label className="room-dimension-field">
-                  가로(cm)
-                  <input
-                    type="number"
-                    min={300}
-                    step={20}
-                    value={roomWidthInput}
-                    onChange={(event) => setRoomWidthInput(Number(event.target.value) || layout.room.width)}
-                  />
-                </label>
-                <label className="room-dimension-field">
-                  세로(cm)
-                  <input
-                    type="number"
-                    min={300}
-                    step={20}
-                    value={roomHeightInput}
-                    onChange={(event) => setRoomHeightInput(Number(event.target.value) || layout.room.height)}
-                  />
-                </label>
-                <button className="primary-button" onClick={() => applyRoomPreset("rectangle")} type="button">
-                  사각형 적용
-                </button>
-              </div>
-
-              <div className="room-action-row">
-                <button className="sheet-chip" onClick={() => void advanceStep()} type="button">
-                  기본 도면 그대로 사용
-                </button>
-                <button className="sheet-chip" onClick={() => applyRoomPreset("l-shape")} type="button">
-                  L자 도면
-                </button>
-                <button className="sheet-chip" onClick={() => applyRoomPreset("u-shape")} type="button">
-                  U자 도면
-                </button>
-                <button
-                  className="sheet-chip"
-                  onClick={() => {
-                    setBottomSheetMode("room-shape");
-                    setNotice("직접 벽을 그릴 필요가 있을 때만 고급 벽 수정 메뉴를 열어주세요.");
-                  }}
-                  type="button"
-                >
-                  고급 벽 수정
-                </button>
-              </div>
-
-              <ol className="room-helper-list">
-                <li>기본은 현재 사각형 도면 그대로 이어가면 됩니다.</li>
-                <li>정확한 수치가 있으면 가로·세로만 먼저 입력하세요.</li>
-                <li>특수 구조일 때만 직선 벽 또는 곡선 벽으로 외곽을 다시 그리면 됩니다.</li>
-              </ol>
+              <button className="primary-button" onClick={() => setSideMenuOpen(true)} type="button">
+                도면 메뉴 열기
+              </button>
             </div>
           ) : null}
 
@@ -627,10 +582,6 @@ const App = () => {
             review={review}
             showReviewOverlay={reviewOverlayVisible}
             onSelectElement={setSelectedElementId}
-            onOpenElementActions={(elementId) => {
-              setSelectedElementId(elementId);
-              setBottomSheetMode("selection-actions");
-            }}
             onUpdateElement={updateElement}
             onCreateElement={(kind, rect) => createElement(kind, rect)}
             onUpdateRoomGeometry={updateRoomGeometry}
@@ -735,6 +686,150 @@ const App = () => {
           </div>
         </div>
       </BottomSheet>
+
+      <SideMenu
+        open={sideMenuOpen}
+        title={workflowStep === "room" ? "도면 메뉴" : workflowStep === "space" ? "공간 메뉴" : "작업 메뉴"}
+        subtitle={
+          workflowStep === "room"
+            ? "도면 설정은 이 메뉴에서만 조정하도록 분리했습니다."
+            : workflowStep === "space"
+              ? "공간 유형을 다시 고르거나 초기화할 수 있습니다."
+              : "배치 작업과 초기화를 한곳에서 다룹니다."
+        }
+        onClose={() => setSideMenuOpen(false)}
+      >
+        {workflowStep === "space" ? (
+          <div className="sheet-option-grid">
+            {spaceTypeOptions.map((option) => (
+              <button key={option.id} className="sheet-option-card" onClick={() => chooseSpaceType(option)} type="button">
+                <strong>{option.label}</strong>
+                <p>{option.description}</p>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {workflowStep === "room" ? (
+          <>
+            <div className="sheet-section">
+              <span className="sheet-section__label">기본 치수</span>
+              <div className="selection-form__row">
+                <label>
+                  가로(cm)
+                  <input
+                    type="number"
+                    min={300}
+                    step={20}
+                    value={roomWidthInput}
+                    onChange={(event) => setRoomWidthInput(Number(event.target.value) || layout.room.width)}
+                  />
+                </label>
+                <label>
+                  세로(cm)
+                  <input
+                    type="number"
+                    min={300}
+                    step={20}
+                    value={roomHeightInput}
+                    onChange={(event) => setRoomHeightInput(Number(event.target.value) || layout.room.height)}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="sheet-section">
+              <span className="sheet-section__label">기본 도형</span>
+              <div className="sheet-inline-grid">
+                {(["rectangle", "l-shape", "u-shape"] as RoomShapePreset[]).map((preset) => (
+                  <button key={preset} className="sheet-chip" onClick={() => applyRoomPreset(preset, roomWidthInput, roomHeightInput)} type="button">
+                    {preset === "rectangle" ? "사각형" : preset === "l-shape" ? "L자" : "U자"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="sheet-section">
+              <span className="sheet-section__label">고급 벽 수정</span>
+              <p className="sheet-section__helper">직접 선을 그리는 대신 기본 도형을 먼저 적용하고, 정말 필요한 경우에만 사용하세요.</p>
+              <div className="sheet-inline-grid">
+                <button
+                  className={roomDrawTool === "line" ? "sheet-chip sheet-chip--active" : "sheet-chip"}
+                  onClick={() => {
+                    setRoomDrawTool("line");
+                    setEditorMode("draw-room");
+                    setSideMenuOpen(false);
+                    setNotice("직선 벽 모드입니다. 시작점을 누르고 벽을 한 줄씩 이어가세요.");
+                  }}
+                  type="button"
+                >
+                  직선 벽
+                </button>
+                <button
+                  className={roomDrawTool === "arc" ? "sheet-chip sheet-chip--active" : "sheet-chip"}
+                  onClick={() => {
+                    setRoomDrawTool("arc");
+                    setEditorMode("draw-room");
+                    setSideMenuOpen(false);
+                    setNotice("곡선 벽 모드입니다. 시작점을 누르고 곡선을 이어가세요.");
+                  }}
+                  type="button"
+                >
+                  곡선 벽
+                </button>
+                <button className={curveDirection === 1 ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => setCurveDirection(1)} type="button">
+                  곡률 A
+                </button>
+                <button className={curveDirection === -1 ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => setCurveDirection(-1)} type="button">
+                  곡률 B
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {(workflowStep === "openings" || workflowStep === "furniture" || workflowStep === "review") ? (
+          <div className="sheet-section">
+            <span className="sheet-section__label">작업</span>
+            <div className="sheet-inline-grid">
+              <button className="sheet-chip" onClick={() => openSheetForCurrentStep()} type="button">
+                {workflowStep === "review" ? "결과 보기" : "요소 추가"}
+              </button>
+              <button
+                className="sheet-chip"
+                onClick={() => {
+                  setEditorMode("select");
+                  setBottomSheetMode(null);
+                  setSideMenuOpen(false);
+                }}
+                type="button"
+              >
+                이동 모드
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="sheet-section">
+          <span className="sheet-section__label">공통</span>
+          <div className="sheet-inline-grid">
+            <button className="sheet-chip" onClick={resetCurrentLayout} type="button">
+              초기화
+            </button>
+            <button
+              className="sheet-chip"
+              onClick={() => {
+                setWorkflowStep("space");
+                setBottomSheetMode("space-type");
+                setSideMenuOpen(false);
+              }}
+              type="button"
+            >
+              공간 다시 선택
+            </button>
+          </div>
+        </div>
+      </SideMenu>
 
       <BottomSheet
         open={bottomSheetMode === "object-picker"}
