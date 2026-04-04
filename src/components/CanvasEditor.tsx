@@ -550,7 +550,7 @@ export const CanvasEditor = ({
   const activeRoomPath = editorMode === "draw-room" && draftSegments.length > 0 ? segmentsToPath(draftSegments, false) : roomPath;
 
   const modeLabel =
-    editorMode === "draw-room" ? "벽 그리기" : editorMode === "draw-element" ? `${catalogItems.find((item) => item.kind === drawKind)?.label ?? "요소"} 추가` : "이동";
+    editorMode === "draw-room" ? "벽 그리기" : editorMode === "draw-element" ? `${catalogItems.find((item) => item.kind === drawKind)?.label ?? "요소"} 추가` : "선택";
 
   const mainBandTone = !showReviewOverlay
     ? "corridor-band corridor-band--neutral"
