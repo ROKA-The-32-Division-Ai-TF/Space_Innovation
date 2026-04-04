@@ -312,7 +312,6 @@ export const CanvasEditor = ({
   const [roomDraftSegments, setRoomDraftSegments] = useState<RoomBoundarySegment[]>([]);
   const [roomPreviewSegment, setRoomPreviewSegment] = useState<RoomBoundarySegment | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [panMode, setPanMode] = useState(false);
   const [panState, setPanState] = useState<{
     startX: number;
     startY: number;
@@ -377,10 +376,6 @@ export const CanvasEditor = ({
 
   const handlePointerDown = (event: PointerEvent<SVGRectElement>, element: LayoutElement) => {
     event.stopPropagation();
-
-    if (panMode) {
-      return;
-    }
 
     if (editorMode !== "select") {
       onSelectElement(element.id);
@@ -474,6 +469,19 @@ export const CanvasEditor = ({
   };
 
   const handleCanvasPointerDown = (event: PointerEvent<SVGSVGElement>) => {
+    if (zoomLevel > 1 && editorMode === "select") {
+      const svg = svgRef.current;
+      if (svg && event.target === svg && viewportRef.current) {
+        setPanState({
+          startX: event.clientX,
+          startY: event.clientY,
+          scrollLeft: viewportRef.current.scrollLeft,
+          scrollTop: viewportRef.current.scrollTop
+        });
+        return;
+      }
+    }
+
     if (editorMode === "draw-room") {
       const point = snapPointToGrid(toCanvasPoint(event));
 
@@ -595,13 +603,6 @@ export const CanvasEditor = ({
               {Math.round(zoomLevel * 100)}%
             </button>
             <button
-              className={panMode ? "canvas-zoom-controls__button canvas-zoom-controls__button--active" : "canvas-zoom-controls__button"}
-              onClick={() => setPanMode((current) => !current)}
-              type="button"
-            >
-              이동
-            </button>
-            <button
               className="canvas-zoom-controls__button"
               disabled={zoomLevel >= 2.5}
               onClick={() => setZoomLevel((current) => Math.min(2.5, Number((current + 0.25).toFixed(2))))}
@@ -618,9 +619,9 @@ export const CanvasEditor = ({
 
       <div
         ref={viewportRef}
-        className={panMode ? "canvas-viewport canvas-viewport--pan" : "canvas-viewport"}
+        className={zoomLevel > 1 ? "canvas-viewport canvas-viewport--pan" : "canvas-viewport"}
         onPointerDown={(event) => {
-          if (!panMode || !viewportRef.current) {
+          if (zoomLevel <= 1 || !viewportRef.current) {
             return;
           }
 
@@ -642,7 +643,7 @@ export const CanvasEditor = ({
         onPointerUp={() => setPanState(null)}
         onPointerLeave={() => setPanState(null)}
       >
-        <div className={panMode ? "canvas-stage canvas-stage--pan" : "canvas-stage"} style={{ width: `${zoomLevel * 100}%` }}>
+        <div className={zoomLevel > 1 ? "canvas-stage canvas-stage--pan" : "canvas-stage"} style={{ width: `${zoomLevel * 100}%` }}>
         <svg
           id={svgId}
           ref={svgRef}
