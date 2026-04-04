@@ -390,6 +390,99 @@ const App = () => {
   const canRotate = Boolean(selectedElement);
   const primaryDisabled = false;
   const currentPickerKinds = workflowStep === "openings" ? openingKinds : furnitureKinds;
+  const actionBarItems =
+    workflowStep === "space"
+      ? [
+          {
+            key: "space",
+            label: "공간",
+            active: bottomSheetMode === "space-type",
+            onClick: () => setBottomSheetMode("space-type")
+          }
+        ]
+      : workflowStep === "room"
+        ? [
+            {
+              key: "shape",
+              label: "도면",
+              active: bottomSheetMode === "room-shape",
+              onClick: () => setBottomSheetMode("room-shape")
+            },
+            {
+              key: "size",
+              label: "치수",
+              onClick: () => {
+                setBottomSheetMode(null);
+                setNotice("가로와 세로 수치를 먼저 맞춘 뒤 다음 단계로 넘어가면 가장 쉽습니다.");
+              }
+            },
+            {
+              key: "advanced",
+              label: "고급 벽 수정",
+              active: editorMode === "draw-room",
+              onClick: () => {
+                setBottomSheetMode("room-shape");
+                setNotice("특수 구조일 때만 직선 벽이나 곡선 벽 수정을 사용하세요.");
+              }
+            }
+          ]
+        : workflowStep === "review"
+          ? [
+              {
+                key: "review",
+                label: "결과",
+                active: bottomSheetMode === "review-summary",
+                onClick: () => setBottomSheetMode("review-summary")
+              },
+              {
+                key: "select",
+                label: "선택",
+                active: editorMode === "select",
+                onClick: () => {
+                  setEditorMode("select");
+                  setBottomSheetMode(null);
+                }
+              }
+            ]
+          : [
+              {
+                key: "add",
+                label: "추가",
+                active: bottomSheetMode === "object-picker",
+                onClick: openSheetForCurrentStep
+              },
+              {
+                key: "select",
+                label: "선택",
+                active: editorMode === "select",
+                onClick: () => {
+                  setEditorMode("select");
+                  if (selectedElementId) {
+                    setBottomSheetMode("selection-actions");
+                  } else {
+                    setBottomSheetMode(null);
+                  }
+                }
+              },
+              ...(canRotate
+                ? [
+                    {
+                      key: "rotate",
+                      label: "회전",
+                      onClick: rotateSelectedElement
+                    }
+                  ]
+                : []),
+              ...(canDelete
+                ? [
+                    {
+                      key: "delete",
+                      label: "삭제",
+                      onClick: deleteSelectedElement
+                    }
+                  ]
+                : [])
+            ];
 
   const addKindFromSheet = (kind: ObjectKind) => {
     setDrawKind(kind);
@@ -496,28 +589,14 @@ const App = () => {
                   U자 도면
                 </button>
                 <button
-                  className={editorMode === "draw-room" && roomDrawTool === "line" ? "sheet-chip sheet-chip--active" : "sheet-chip"}
+                  className="sheet-chip"
                   onClick={() => {
-                    setEditorMode("draw-room");
-                    setRoomDrawTool("line");
-                    setBottomSheetMode(null);
-                    setNotice("직선 벽 모드입니다. 시작점을 누르고 벽을 한 줄씩 이어가세요.");
+                    setBottomSheetMode("room-shape");
+                    setNotice("직접 벽을 그릴 필요가 있을 때만 고급 벽 수정 메뉴를 열어주세요.");
                   }}
                   type="button"
                 >
-                  직선 벽 수정
-                </button>
-                <button
-                  className={editorMode === "draw-room" && roomDrawTool === "arc" ? "sheet-chip sheet-chip--active" : "sheet-chip"}
-                  onClick={() => {
-                    setEditorMode("draw-room");
-                    setRoomDrawTool("arc");
-                    setBottomSheetMode(null);
-                    setNotice("곡선 벽 모드입니다. 시작점을 누르고 곡선을 이어가세요.");
-                  }}
-                  type="button"
-                >
-                  곡선 벽 수정
+                  고급 벽 수정
                 </button>
               </div>
 
@@ -548,21 +627,9 @@ const App = () => {
       </main>
 
       <ActionBar
-        addActive={bottomSheetMode === "space-type" || bottomSheetMode === "room-shape" || bottomSheetMode === "object-picker"}
-        moveActive={editorMode === "select"}
-        canRotate={canRotate}
-        canDelete={canDelete}
+        items={actionBarItems}
         primaryDisabled={primaryDisabled}
         primaryLabel={primaryLabel}
-        onAdd={openSheetForCurrentStep}
-        onMove={() => {
-          setEditorMode("select");
-          if (selectedElementId) {
-            setBottomSheetMode("selection-actions");
-          }
-        }}
-        onRotate={rotateSelectedElement}
-        onDelete={deleteSelectedElement}
         onPrimary={() => {
           void advanceStep();
         }}
@@ -586,15 +653,41 @@ const App = () => {
 
       <BottomSheet
         open={bottomSheetMode === "room-shape"}
-        title="방 형태를 선택하거나 그려주세요"
-        subtitle="기본 도형을 적용한 뒤 직선 벽 또는 곡선 벽으로 실제 구조를 다듬을 수 있습니다."
+        title="도면 구조를 설정해주세요"
+        subtitle="기본 사각형과 수치 입력을 우선 쓰고, 직접 벽 그리기는 특수 공간일 때만 사용하는 편이 모바일에서 훨씬 쉽습니다."
         onClose={() => setBottomSheetMode(null)}
       >
+        <div className="sheet-section">
+          <span className="sheet-section__label">기본 치수</span>
+          <div className="selection-form__row">
+            <label>
+              가로(cm)
+              <input
+                type="number"
+                min={300}
+                step={20}
+                value={roomWidthInput}
+                onChange={(event) => setRoomWidthInput(Number(event.target.value) || layout.room.width)}
+              />
+            </label>
+            <label>
+              세로(cm)
+              <input
+                type="number"
+                min={300}
+                step={20}
+                value={roomHeightInput}
+                onChange={(event) => setRoomHeightInput(Number(event.target.value) || layout.room.height)}
+              />
+            </label>
+          </div>
+        </div>
+
         <div className="sheet-section">
           <span className="sheet-section__label">기본 형태</span>
           <div className="sheet-inline-grid">
             {(["rectangle", "l-shape", "u-shape"] as RoomShapePreset[]).map((preset) => (
-              <button key={preset} className="sheet-chip" onClick={() => applyRoomPreset(preset)} type="button">
+              <button key={preset} className="sheet-chip" onClick={() => applyRoomPreset(preset, roomWidthInput, roomHeightInput)} type="button">
                 {preset === "rectangle" ? "사각형" : preset === "l-shape" ? "L자" : "U자"}
               </button>
             ))}
@@ -602,17 +695,22 @@ const App = () => {
         </div>
 
         <div className="sheet-section">
-          <span className="sheet-section__label">벽 그리기</span>
+          <span className="sheet-section__label">고급 벽 수정</span>
+          <p className="sheet-section__helper">비정형 공간일 때만 사용하세요. 일반적인 생활관이나 사무공간은 위 기본 도형만으로 시작하는 편이 더 쉽습니다.</p>
           <div className="sheet-inline-grid">
             <button className={roomDrawTool === "line" ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => {
               setRoomDrawTool("line");
               setEditorMode("draw-room");
+              setBottomSheetMode(null);
+              setNotice("직선 벽 모드입니다. 시작점을 누르고 벽을 한 줄씩 이어가세요.");
             }} type="button">
               직선 벽
             </button>
             <button className={roomDrawTool === "arc" ? "sheet-chip sheet-chip--active" : "sheet-chip"} onClick={() => {
               setRoomDrawTool("arc");
               setEditorMode("draw-room");
+              setBottomSheetMode(null);
+              setNotice("곡선 벽 모드입니다. 시작점을 누르고 곡선을 이어가세요.");
             }} type="button">
               곡선 벽
             </button>
