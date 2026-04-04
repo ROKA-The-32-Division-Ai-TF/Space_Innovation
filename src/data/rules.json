@@ -1,0 +1,69 @@
+{
+  "id": "barracks-default",
+  "name": "생활관 기본 규정 세트",
+  "description": "군 생활관 배치 검토를 위한 MVP 규정 세트",
+  "rules": [
+    {
+      "rule_id": "collision_basic",
+      "name": "객체 충돌 금지",
+      "type": "collision_constraint",
+      "target": "layout_elements",
+      "targetKinds": ["bed", "locker", "desk", "chair", "storage", "equipment", "pillar"],
+      "message": "가구와 구조물 간 충돌이 없어야 합니다.",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "main_corridor_min_width",
+      "name": "주통로 최소 폭",
+      "type": "corridor_band_min_width",
+      "target": "vertical_band",
+      "bandStart": 340,
+      "bandThickness": 120,
+      "value": 120,
+      "message": "주통로는 최소 120cm 이상 확보되어야 합니다.",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "sub_corridor_min_width",
+      "name": "보조통로 최소 폭",
+      "type": "corridor_band_min_width",
+      "target": "horizontal_band",
+      "bandStart": 250,
+      "bandThickness": 80,
+      "value": 80,
+      "message": "보조통로는 최소 80cm 이상 확보되어야 합니다.",
+      "severity": "major"
+    },
+    {
+      "rule_id": "door_front_clearance",
+      "name": "출입문 전방 장애물 금지",
+      "type": "door_clearance",
+      "target": "door_front",
+      "distance": 100,
+      "applyToKinds": ["bed", "locker", "desk", "chair", "storage", "equipment"],
+      "message": "출입문 전방 100cm 이내에는 장애물이 없어야 합니다.",
+      "severity": "critical"
+    },
+    {
+      "rule_id": "bed_spacing",
+      "name": "침상 간 최소 이격거리",
+      "type": "min_distance_between_kinds",
+      "target": "bed_to_bed",
+      "sourceKinds": ["bed"],
+      "otherKinds": ["bed"],
+      "value": 60,
+      "message": "침상 간에는 최소 60cm 이격거리가 필요합니다.",
+      "severity": "major"
+    },
+    {
+      "rule_id": "equipment_near_door",
+      "name": "장비함 출입문 주변 배치 금지",
+      "type": "restricted_zone",
+      "target": "door_zone",
+      "distance": 120,
+      "restrictedKinds": ["equipment", "storage"],
+      "message": "장비함과 대형 보관함은 출입문 주변 120cm 이내 배치할 수 없습니다.",
+      "severity": "major"
+    }
+  ]
+}
