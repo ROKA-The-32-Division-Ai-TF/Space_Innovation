@@ -305,12 +305,20 @@ export const CanvasEditor = ({
   onUpdateRoomGeometry
 }: CanvasEditorProps) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [draftRect, setDraftRect] = useState<DraftRectState | null>(null);
   const [roomDraftPoints, setRoomDraftPoints] = useState<Point[]>([]);
   const [roomDraftSegments, setRoomDraftSegments] = useState<RoomBoundarySegment[]>([]);
   const [roomPreviewSegment, setRoomPreviewSegment] = useState<RoomBoundarySegment | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [panMode, setPanMode] = useState(false);
+  const [panState, setPanState] = useState<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
 
   const mainBand = useMemo(() => createBandRect(layout.room, "vertical_band", 340, 120), [layout.room]);
   const subBand = useMemo(() => createBandRect(layout.room, "horizontal_band", 250, 80), [layout.room]);
@@ -370,6 +378,10 @@ export const CanvasEditor = ({
   const handlePointerDown = (event: PointerEvent<SVGRectElement>, element: LayoutElement) => {
     event.stopPropagation();
 
+    if (panMode) {
+      return;
+    }
+
     if (editorMode !== "select") {
       onSelectElement(element.id);
       return;
@@ -390,6 +402,12 @@ export const CanvasEditor = ({
   };
 
   const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    if (panState && viewportRef.current) {
+      viewportRef.current.scrollLeft = panState.scrollLeft - (event.clientX - panState.startX);
+      viewportRef.current.scrollTop = panState.scrollTop - (event.clientY - panState.startY);
+      return;
+    }
+
     if (dragState) {
       const point = toCanvasPoint(event);
       onUpdateElement(dragState.elementId, {
@@ -426,6 +444,7 @@ export const CanvasEditor = ({
 
   const stopDragging = () => {
     setDragState(null);
+    setPanState(null);
 
     if (draftRect && drawKind && editorMode === "draw-element") {
       const x = Math.min(draftRect.startX, draftRect.currentX);
@@ -576,6 +595,13 @@ export const CanvasEditor = ({
               {Math.round(zoomLevel * 100)}%
             </button>
             <button
+              className={panMode ? "canvas-zoom-controls__button canvas-zoom-controls__button--active" : "canvas-zoom-controls__button"}
+              onClick={() => setPanMode((current) => !current)}
+              type="button"
+            >
+              이동
+            </button>
+            <button
               className="canvas-zoom-controls__button"
               disabled={zoomLevel >= 2.5}
               onClick={() => setZoomLevel((current) => Math.min(2.5, Number((current + 0.25).toFixed(2))))}
@@ -590,8 +616,33 @@ export const CanvasEditor = ({
         </div>
       </div>
 
-      <div className="canvas-viewport">
-        <div className="canvas-stage" style={{ width: `${zoomLevel * 100}%` }}>
+      <div
+        ref={viewportRef}
+        className={panMode ? "canvas-viewport canvas-viewport--pan" : "canvas-viewport"}
+        onPointerDown={(event) => {
+          if (!panMode || !viewportRef.current) {
+            return;
+          }
+
+          setPanState({
+            startX: event.clientX,
+            startY: event.clientY,
+            scrollLeft: viewportRef.current.scrollLeft,
+            scrollTop: viewportRef.current.scrollTop
+          });
+        }}
+        onPointerMove={(event) => {
+          if (!panState || !viewportRef.current) {
+            return;
+          }
+
+          viewportRef.current.scrollLeft = panState.scrollLeft - (event.clientX - panState.startX);
+          viewportRef.current.scrollTop = panState.scrollTop - (event.clientY - panState.startY);
+        }}
+        onPointerUp={() => setPanState(null)}
+        onPointerLeave={() => setPanState(null)}
+      >
+        <div className={panMode ? "canvas-stage canvas-stage--pan" : "canvas-stage"} style={{ width: `${zoomLevel * 100}%` }}>
         <svg
           id={svgId}
           ref={svgRef}

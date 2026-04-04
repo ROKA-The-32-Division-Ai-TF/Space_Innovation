@@ -407,6 +407,12 @@ img {
   color: var(--ink);
 }
 
+.canvas-zoom-controls__button--active {
+  background: rgba(77, 103, 80, 0.12);
+  border-color: rgba(77, 103, 80, 0.26);
+  color: var(--accent-strong);
+}
+
 .canvas-zoom-controls__button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -445,8 +451,16 @@ img {
   -webkit-overflow-scrolling: touch;
 }
 
+.canvas-viewport--pan {
+  cursor: grab;
+}
+
 .canvas-stage {
   min-width: 100%;
+}
+
+.canvas-stage--pan {
+  pointer-events: none;
 }
 
 .canvas-shell__empty {
@@ -1006,6 +1020,12 @@ img {
 .app-shell--dark .canvas-shell__empty {
   background: rgba(25, 31, 28, 0.98);
   border-color: rgba(231, 236, 231, 0.12);
+}
+
+.app-shell--dark .canvas-zoom-controls__button--active {
+  background: rgba(123, 144, 118, 0.16);
+  border-color: rgba(123, 144, 118, 0.3);
+  color: #e7ece7;
 }
 
 .app-shell--dark .side-menu-backdrop,
