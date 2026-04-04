@@ -310,6 +310,7 @@ export const CanvasEditor = ({
   const [roomDraftPoints, setRoomDraftPoints] = useState<Point[]>([]);
   const [roomDraftSegments, setRoomDraftSegments] = useState<RoomBoundarySegment[]>([]);
   const [roomPreviewSegment, setRoomPreviewSegment] = useState<RoomBoundarySegment | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   const mainBand = useMemo(() => createBandRect(layout.room, "vertical_band", 340, 120), [layout.room]);
   const subBand = useMemo(() => createBandRect(layout.room, "horizontal_band", 250, 80), [layout.room]);
@@ -562,120 +563,144 @@ export const CanvasEditor = ({
           <span className="legend">
             {layout.room.width} x {layout.room.height}cm
           </span>
+          <div className="canvas-zoom-controls">
+            <button
+              className="canvas-zoom-controls__button"
+              disabled={zoomLevel <= 1}
+              onClick={() => setZoomLevel((current) => Math.max(1, Number((current - 0.25).toFixed(2))))}
+              type="button"
+            >
+              축소
+            </button>
+            <button className="canvas-zoom-controls__button canvas-zoom-controls__button--value" onClick={() => setZoomLevel(1)} type="button">
+              {Math.round(zoomLevel * 100)}%
+            </button>
+            <button
+              className="canvas-zoom-controls__button"
+              disabled={zoomLevel >= 2}
+              onClick={() => setZoomLevel((current) => Math.min(2, Number((current + 0.25).toFixed(2))))}
+              type="button"
+            >
+              확대
+            </button>
+          </div>
         </div>
       </div>
 
-      <svg
-        id={svgId}
-        ref={svgRef}
-        className="floor-canvas"
-        viewBox={`0 0 ${layout.room.width} ${layout.room.height}`}
-        onPointerDown={handleCanvasPointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={stopDragging}
-        onPointerLeave={stopDragging}
-        onDoubleClick={() => {
-          if (editorMode === "draw-room" && roomDraftPoints.length >= 3 && roomDraftSegments.length >= 2) {
-            finalizeRoomSegments([...roomDraftSegments, createLineSegment(roomDraftPoints[roomDraftPoints.length - 1], roomDraftPoints[0])]);
-          }
-        }}
-      >
-        <defs>
-          <clipPath id="room-clip">{roomPath ? <path d={roomPath} /> : null}</clipPath>
-        </defs>
+      <div className="canvas-viewport">
+        <svg
+          id={svgId}
+          ref={svgRef}
+          className="floor-canvas"
+          style={{ width: `${zoomLevel * 100}%` }}
+          viewBox={`0 0 ${layout.room.width} ${layout.room.height}`}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={stopDragging}
+          onPointerLeave={stopDragging}
+          onDoubleClick={() => {
+            if (editorMode === "draw-room" && roomDraftPoints.length >= 3 && roomDraftSegments.length >= 2) {
+              finalizeRoomSegments([...roomDraftSegments, createLineSegment(roomDraftPoints[roomDraftPoints.length - 1], roomDraftPoints[0])]);
+            }
+          }}
+        >
+          <defs>
+            <clipPath id="room-clip">{roomPath ? <path d={roomPath} /> : null}</clipPath>
+          </defs>
 
-        {roomPath ? <path d={roomPath} className="room-boundary-path" /> : null}
+          {roomPath ? <path d={roomPath} className="room-boundary-path" /> : null}
 
-        {showReviewOverlay && roomPath ? (
-          <g clipPath="url(#room-clip)">
-            <rect x={mainBand.x} y={mainBand.y} width={mainBand.width} height={mainBand.height} className={mainBandTone} />
-            <rect x={subBand.x} y={subBand.y} width={subBand.width} height={subBand.height} className={subBandTone} />
-            {doorFrontZones.map((zone) => (
-              <rect
-                key={zone.id}
-                x={zone.x}
-                y={zone.y}
-                width={zone.width}
-                height={zone.height}
-                className="review-zone review-zone--danger"
-                rx={6}
-                ry={6}
-              />
-            ))}
-            {restrictedDoorZones.map((zone) => (
-              <rect
-                key={`${zone.id}-restricted`}
-                x={zone.x}
-                y={zone.y}
-                width={zone.width}
-                height={zone.height}
-                className="review-zone review-zone--warning"
-                rx={6}
-                ry={6}
-              />
-            ))}
-          </g>
-        ) : null}
+          {showReviewOverlay && roomPath ? (
+            <g clipPath="url(#room-clip)">
+              <rect x={mainBand.x} y={mainBand.y} width={mainBand.width} height={mainBand.height} className={mainBandTone} />
+              <rect x={subBand.x} y={subBand.y} width={subBand.width} height={subBand.height} className={subBandTone} />
+              {doorFrontZones.map((zone) => (
+                <rect
+                  key={zone.id}
+                  x={zone.x}
+                  y={zone.y}
+                  width={zone.width}
+                  height={zone.height}
+                  className="review-zone review-zone--danger"
+                  rx={6}
+                  ry={6}
+                />
+              ))}
+              {restrictedDoorZones.map((zone) => (
+                <rect
+                  key={`${zone.id}-restricted`}
+                  x={zone.x}
+                  y={zone.y}
+                  width={zone.width}
+                  height={zone.height}
+                  className="review-zone review-zone--warning"
+                  rx={6}
+                  ry={6}
+                />
+              ))}
+            </g>
+          ) : null}
 
-        {activeOutline.length >= 2 ? (
-          <path d={activeRoomPath} className={editorMode === "draw-room" ? "room-outline-draft" : "room-outline"} fill="none" />
-        ) : null}
+          {activeOutline.length >= 2 ? (
+            <path d={activeRoomPath} className={editorMode === "draw-room" ? "room-outline-draft" : "room-outline"} fill="none" />
+          ) : null}
 
-        {editorMode === "draw-room" && roomDraftSegments.length > 0 ? roomDraftSegments.map((segment, index) => renderSegmentTag(segment, `${segment.kind}-${index}`)) : null}
-        {editorMode === "draw-room" && roomPreviewSegment ? (
-          <>
-            <path d={segmentToPreviewPath(roomPreviewSegment)} className="room-preview-segment" />
-            {renderSegmentTag(roomPreviewSegment, "preview")}
-          </>
-        ) : null}
+          {editorMode === "draw-room" && roomDraftSegments.length > 0 ? roomDraftSegments.map((segment, index) => renderSegmentTag(segment, `${segment.kind}-${index}`)) : null}
+          {editorMode === "draw-room" && roomPreviewSegment ? (
+            <>
+              <path d={segmentToPreviewPath(roomPreviewSegment)} className="room-preview-segment" />
+              {renderSegmentTag(roomPreviewSegment, "preview")}
+            </>
+          ) : null}
 
-        {editorMode === "draw-room" && roomDraftPoints.length > 0 ? (
-          <>
-            {roomDraftPoints.map((point, index) => (
-              <circle key={`${point.x}-${point.y}-${index}`} cx={point.x} cy={point.y} r={6} className="room-vertex" />
-            ))}
-            <text x={roomDraftPoints[0].x + 12} y={roomDraftPoints[0].y - 12} className="draft-label">
-              벽 작성 중
-            </text>
-            {roomDraftPoints.length >= 3 ? <circle cx={roomDraftPoints[0].x} cy={roomDraftPoints[0].y} r={12} className="room-vertex room-vertex--close" /> : null}
-          </>
-        ) : null}
+          {editorMode === "draw-room" && roomDraftPoints.length > 0 ? (
+            <>
+              {roomDraftPoints.map((point, index) => (
+                <circle key={`${point.x}-${point.y}-${index}`} cx={point.x} cy={point.y} r={6} className="room-vertex" />
+              ))}
+              <text x={roomDraftPoints[0].x + 12} y={roomDraftPoints[0].y - 12} className="draft-label">
+                벽 작성 중
+              </text>
+              {roomDraftPoints.length >= 3 ? <circle cx={roomDraftPoints[0].x} cy={roomDraftPoints[0].y} r={12} className="room-vertex room-vertex--close" /> : null}
+            </>
+          ) : null}
 
-        {layout.elements.map((element) => {
-          const selected = selectedElementId === element.id;
-          const width = element.rotation === 90 || element.rotation === 270 ? element.height : element.width;
-          const height = element.rotation === 90 || element.rotation === 270 ? element.width : element.height;
-          const severity = violationElementSeverity.get(element.id);
+          {layout.elements.map((element) => {
+            const selected = selectedElementId === element.id;
+            const width = element.rotation === 90 || element.rotation === 270 ? element.height : element.width;
+            const height = element.rotation === 90 || element.rotation === 270 ? element.width : element.height;
+            const severity = violationElementSeverity.get(element.id);
 
-          return (
-            <g key={element.id} transform={`translate(${element.x}, ${element.y})`} style={{ opacity: element.opacity ?? 1 }}>
-              {showReviewOverlay && severity ? <rect x={-4} y={-4} width={width + 8} height={height + 8} className={severity === "critical" ? "element-review-halo element-review-halo--danger" : "element-review-halo element-review-halo--warning"} rx={10} ry={10} /> : null}
-              <FurnitureVisual element={element} width={width} height={height} selected={selected} severity={severity} />
-              <rect
-                x={0}
-                y={0}
-                width={width}
-                height={height}
-                fill="transparent"
-                className={selected ? "shape shape--selected" : "shape"}
-                onPointerDown={(event) => handlePointerDown(event, element)}
-              />
-              <text x={12} y={20} className="shape-label">
-                {element.name}
+            return (
+              <g key={element.id} transform={`translate(${element.x}, ${element.y})`} style={{ opacity: element.opacity ?? 1 }}>
+                {showReviewOverlay && severity ? <rect x={-4} y={-4} width={width + 8} height={height + 8} className={severity === "critical" ? "element-review-halo element-review-halo--danger" : "element-review-halo element-review-halo--warning"} rx={10} ry={10} /> : null}
+                <FurnitureVisual element={element} width={width} height={height} selected={selected} severity={severity} />
+                <rect
+                  x={0}
+                  y={0}
+                  width={width}
+                  height={height}
+                  fill="transparent"
+                  className={selected ? "shape shape--selected" : "shape"}
+                  onPointerDown={(event) => handlePointerDown(event, element)}
+                />
+                <text x={12} y={20} className="shape-label">
+                  {element.name}
+                </text>
+              </g>
+            );
+          })}
+
+          {draftDimensions ? (
+            <g pointerEvents="none">
+              <rect x={draftDimensions.x} y={draftDimensions.y} width={draftDimensions.width} height={draftDimensions.height} className="draft-rect" />
+              <text x={draftDimensions.x + 10} y={draftDimensions.y + 20} className="draft-label">
+                {Math.round(draftDimensions.width)} x {Math.round(draftDimensions.height)}cm
               </text>
             </g>
-          );
-        })}
-
-        {draftDimensions ? (
-          <g pointerEvents="none">
-            <rect x={draftDimensions.x} y={draftDimensions.y} width={draftDimensions.width} height={draftDimensions.height} className="draft-rect" />
-            <text x={draftDimensions.x + 10} y={draftDimensions.y + 20} className="draft-label">
-              {Math.round(draftDimensions.width)} x {Math.round(draftDimensions.height)}cm
-            </text>
-          </g>
-        ) : null}
-      </svg>
+          ) : null}
+        </svg>
+      </div>
 
       {layout.elements.length === 0 && editorMode === "select" ? (
         <div className="canvas-shell__empty">

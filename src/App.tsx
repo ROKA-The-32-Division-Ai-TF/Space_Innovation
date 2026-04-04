@@ -72,7 +72,7 @@ const workflowMeta: Record<WorkflowStep, { label: string; hint: string; primaryL
   },
   room: {
     label: "구조 생성",
-    hint: "사각형 또는 벽 그리기 도구로 실제 공간 외곽을 잡아주세요.",
+    hint: "기본 사각형을 그대로 쓰거나, 가로·세로 수치를 먼저 입력한 뒤 필요할 때만 벽을 수정하세요.",
     primaryLabel: "문/창문 배치로"
   },
   openings: {
@@ -148,6 +148,8 @@ const App = () => {
   const [roomDrawTool, setRoomDrawTool] = useState<RoomDrawTool>("line");
   const [curveDirection, setCurveDirection] = useState<1 | -1>(1);
   const [reviewOverlayVisible, setReviewOverlayVisible] = useState(false);
+  const [roomWidthInput, setRoomWidthInput] = useState(800);
+  const [roomHeightInput, setRoomHeightInput] = useState(600);
   const [notice, setNotice] = useState<string>();
 
   const selectedElement = layout.elements.find((element) => element.id === selectedElementId);
@@ -162,6 +164,11 @@ const App = () => {
   useEffect(() => {
     setReviewOverlayVisible(workflowStep === "review");
   }, [workflowStep]);
+
+  useEffect(() => {
+    setRoomWidthInput(layout.room.width);
+    setRoomHeightInput(layout.room.height);
+  }, [layout.room.height, layout.room.width]);
 
   useEffect(() => {
     if (!selectedElementId) {
@@ -278,14 +285,17 @@ const App = () => {
   };
 
   const chooseSpaceType = (option: SpaceTypeOption) => {
+    const nextLayout = createBlankLayout(option);
     setSelectedSpaceType(option);
-    setLayout(createBlankLayout(option));
+    setLayout(nextLayout);
     setSelectedElementId(undefined);
     setWorkflowStep("room");
-    setBottomSheetMode("room-shape");
-    setEditorMode("draw-room");
+    setBottomSheetMode(null);
+    setEditorMode("select");
     setDrawKind("door");
-    setNotice(`${option.label} 구조를 먼저 잡아보세요.`);
+    setRoomWidthInput(nextLayout.room.width);
+    setRoomHeightInput(nextLayout.room.height);
+    setNotice(`${option.label} 기본 사각형 도면을 불러왔습니다. 그대로 사용하거나 가로/세로를 먼저 맞춰보세요.`);
   };
 
   const openSheetForCurrentStep = () => {
@@ -387,11 +397,31 @@ const App = () => {
     setBottomSheetMode(null);
   };
 
-  const applyRoomPreset = (preset: RoomShapePreset) => {
-    const geometry = buildRoomShapePreset(preset, layout.room.width, layout.room.height);
-    updateRoomGeometry(geometry.outline, geometry.boundarySegments);
-    setEditorMode("draw-room");
-    setNotice(`${preset === "rectangle" ? "사각형" : preset === "l-shape" ? "L자" : "U자"} 구조를 적용했습니다.`);
+  const applyRoomPreset = (preset: RoomShapePreset, width = roomWidthInput, height = roomHeightInput) => {
+    const nextWidth = Math.max(300, Math.round(width / 20) * 20);
+    const nextHeight = Math.max(300, Math.round(height / 20) * 20);
+    const geometry = buildRoomShapePreset(preset, nextWidth, nextHeight);
+
+    setLayout((currentLayout) => {
+      const nextRoom = {
+        ...currentLayout.room,
+        width: nextWidth,
+        height: nextHeight,
+        outline: geometry.outline,
+        boundarySegments: geometry.boundarySegments
+      };
+
+      return {
+        ...currentLayout,
+        room: nextRoom,
+        elements: currentLayout.elements.map((element) => clampElementToRoom(element, nextRoom))
+      };
+    });
+
+    setRoomWidthInput(nextWidth);
+    setRoomHeightInput(nextHeight);
+    setEditorMode("select");
+    setNotice(`${preset === "rectangle" ? "사각형" : preset === "l-shape" ? "L자" : "U자"} 도면을 ${nextWidth} x ${nextHeight}cm 기준으로 적용했습니다.`);
   };
 
   return (
@@ -419,6 +449,83 @@ const App = () => {
               <button className="primary-button" onClick={() => setBottomSheetMode("space-type")} type="button">
                 공간 유형 고르기
               </button>
+            </div>
+          ) : null}
+
+          {workflowStep === "room" ? (
+            <div className="room-start-card">
+              <div className="room-start-card__copy">
+                <strong>먼저 기본 도면을 정하세요.</strong>
+                <p>오토캐드처럼 정확하게 시작하려면 가로·세로 수치를 먼저 넣고, 필요할 때만 벽을 한 줄씩 수정하는 흐름이 가장 쉽습니다.</p>
+              </div>
+
+              <div className="room-dimension-row">
+                <label className="room-dimension-field">
+                  가로(cm)
+                  <input
+                    type="number"
+                    min={300}
+                    step={20}
+                    value={roomWidthInput}
+                    onChange={(event) => setRoomWidthInput(Number(event.target.value) || layout.room.width)}
+                  />
+                </label>
+                <label className="room-dimension-field">
+                  세로(cm)
+                  <input
+                    type="number"
+                    min={300}
+                    step={20}
+                    value={roomHeightInput}
+                    onChange={(event) => setRoomHeightInput(Number(event.target.value) || layout.room.height)}
+                  />
+                </label>
+                <button className="primary-button" onClick={() => applyRoomPreset("rectangle")} type="button">
+                  사각형 적용
+                </button>
+              </div>
+
+              <div className="room-action-row">
+                <button className="sheet-chip" onClick={() => void advanceStep()} type="button">
+                  기본 도면 그대로 사용
+                </button>
+                <button className="sheet-chip" onClick={() => applyRoomPreset("l-shape")} type="button">
+                  L자 도면
+                </button>
+                <button className="sheet-chip" onClick={() => applyRoomPreset("u-shape")} type="button">
+                  U자 도면
+                </button>
+                <button
+                  className={editorMode === "draw-room" && roomDrawTool === "line" ? "sheet-chip sheet-chip--active" : "sheet-chip"}
+                  onClick={() => {
+                    setEditorMode("draw-room");
+                    setRoomDrawTool("line");
+                    setBottomSheetMode(null);
+                    setNotice("직선 벽 모드입니다. 시작점을 누르고 벽을 한 줄씩 이어가세요.");
+                  }}
+                  type="button"
+                >
+                  직선 벽 수정
+                </button>
+                <button
+                  className={editorMode === "draw-room" && roomDrawTool === "arc" ? "sheet-chip sheet-chip--active" : "sheet-chip"}
+                  onClick={() => {
+                    setEditorMode("draw-room");
+                    setRoomDrawTool("arc");
+                    setBottomSheetMode(null);
+                    setNotice("곡선 벽 모드입니다. 시작점을 누르고 곡선을 이어가세요.");
+                  }}
+                  type="button"
+                >
+                  곡선 벽 수정
+                </button>
+              </div>
+
+              <ol className="room-helper-list">
+                <li>기본은 현재 사각형 도면 그대로 이어가면 됩니다.</li>
+                <li>정확한 수치가 있으면 가로·세로만 먼저 입력하세요.</li>
+                <li>특수 구조일 때만 직선 벽 또는 곡선 벽으로 외곽을 다시 그리면 됩니다.</li>
+              </ol>
             </div>
           ) : null}
 

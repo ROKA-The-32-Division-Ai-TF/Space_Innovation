@@ -221,6 +221,68 @@ img {
   gap: 12px;
 }
 
+.room-start-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(16, 163, 127, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-soft);
+}
+
+.room-start-card__copy {
+  display: grid;
+  gap: 6px;
+}
+
+.room-start-card__copy strong {
+  font-size: 1rem;
+}
+
+.room-start-card__copy p,
+.room-helper-list {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.room-dimension-row {
+  display: grid;
+  gap: 10px;
+}
+
+.room-dimension-field {
+  display: grid;
+  gap: 7px;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.room-dimension-field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.room-action-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.room-helper-list {
+  padding-left: 18px;
+}
+
+.room-helper-list li + li {
+  margin-top: 6px;
+}
+
 .stage-empty-card {
   position: relative;
   z-index: 1;
@@ -288,6 +350,33 @@ img {
   gap: 8px;
 }
 
+.canvas-zoom-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.canvas-zoom-controls__button {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.canvas-zoom-controls__button--value {
+  color: var(--ink);
+}
+
+.canvas-zoom-controls__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .legend {
   display: inline-flex;
   align-items: center;
@@ -304,14 +393,21 @@ img {
   width: 100%;
   height: min(58vh, 560px);
   min-height: 340px;
-  border: 1px solid rgba(36, 49, 64, 0.12);
-  border-radius: 18px;
   background:
     linear-gradient(rgba(64, 78, 92, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(64, 78, 92, 0.06) 1px, transparent 1px),
     linear-gradient(180deg, #fafbfd 0%, #f5f7fa 100%);
   background-size: 20px 20px, 20px 20px, auto;
   touch-action: none;
+  flex: 0 0 auto;
+}
+
+.canvas-viewport {
+  overflow: auto;
+  border: 1px solid rgba(36, 49, 64, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(250, 251, 253, 0.92), rgba(245, 247, 250, 0.94));
+  -webkit-overflow-scrolling: touch;
 }
 
 .canvas-shell__empty {
@@ -745,6 +841,11 @@ img {
 
   .sheet-option-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .room-dimension-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
   }
 }
 
