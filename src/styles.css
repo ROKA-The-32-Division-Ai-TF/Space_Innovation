@@ -568,6 +568,25 @@ img {
   letter-spacing: -0.03em;
 }
 
+.review-status-card__subscores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-status-card__subscores span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(246, 247, 242, 0.96);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .room-boundary-path {
   fill: rgba(255, 255, 255, 0.88);
   stroke: #385471;
@@ -1075,6 +1094,30 @@ img {
   color: var(--ink-soft);
 }
 
+.review-summary__subscores {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-summary__subscore {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(246, 247, 242, 0.96);
+}
+
+.review-summary__subscore span {
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.review-summary__subscore strong {
+  font-size: 1.02rem;
+}
+
 .review-list {
   display: grid;
   gap: 10px;
@@ -1200,6 +1243,8 @@ img {
 .app-shell--dark .sheet-chip,
 .app-shell--dark .review-item,
 .app-shell--dark .review-summary__hero > div,
+.app-shell--dark .review-summary__subscore,
+.app-shell--dark .review-status-card__subscores span,
 .app-shell--dark .action-bar__button,
 .app-shell--dark .header-link-button,
 .app-shell--dark .legend,

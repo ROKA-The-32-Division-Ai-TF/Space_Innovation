@@ -1,6 +1,6 @@
 import { ElementCategory, ObjectKind, Point, RoomBoundarySegment } from "./layout";
 
-export type AnalyzeSeverity = "low" | "medium" | "high" | "minor" | "major" | "critical";
+export type AnalyzeSeverity = "info" | "low" | "medium" | "high" | "minor" | "major" | "critical" | "warning" | "error";
 
 export interface AnalyzeRegionRect {
   type: "rect";
@@ -21,28 +21,35 @@ export interface AnalyzeRequestRoom {
   width: number;
   height: number;
   outline: Point[];
-  boundarySegments: RoomBoundarySegment[];
+  boundary_segments: RoomBoundarySegment[];
 }
 
 export interface AnalyzeRequestElement {
   id: string;
   name: string;
-  kind: ObjectKind;
+  type: ObjectKind;
   category: ElementCategory;
   x: number;
   y: number;
-  width: number;
-  height: number;
+  w: number;
+  h: number;
   rotation: 0 | 90 | 180 | 270;
   metadata?: Record<string, string | number | boolean>;
 }
 
 export interface AnalyzeRequest {
-  spaceType: string;
-  layoutId: string;
+  space_type: string;
+  layout_id: string;
   unit: "cm";
   room: AnalyzeRequestRoom;
-  elements: AnalyzeRequestElement[];
+  objects: AnalyzeRequestElement[];
+}
+
+export interface AnalyzeSubscores {
+  pathway?: number;
+  access?: number;
+  density?: number;
+  alignment?: number;
 }
 
 export interface AnalyzeIssue {
@@ -56,6 +63,7 @@ export interface AnalyzeIssue {
 
 export interface AnalyzeResponse {
   score: number;
+  subscores?: AnalyzeSubscores;
   summary: string;
   suggestions: string[];
   issues: AnalyzeIssue[];

@@ -39,35 +39,61 @@ const validateAnalyzeResponse = (value: unknown): AnalyzeResponse => {
 
   return {
     score,
+    subscores:
+      isRecord(value.subscores)
+        ? {
+            pathway: typeof value.subscores.pathway === "number" ? value.subscores.pathway : undefined,
+            access: typeof value.subscores.access === "number" ? value.subscores.access : undefined,
+            density: typeof value.subscores.density === "number" ? value.subscores.density : undefined,
+            alignment: typeof value.subscores.alignment === "number" ? value.subscores.alignment : undefined
+          }
+        : undefined,
     summary,
     suggestions: suggestions.filter((item): item is string => typeof item === "string"),
     issues: issues
       .filter((item): item is Record<string, unknown> => isRecord(item))
       .map((issue) => ({
-        id: typeof issue.id === "string" ? issue.id : `issue-${Math.random().toString(36).slice(2, 8)}`,
-        title: typeof issue.title === "string" ? issue.title : "문제 구역",
+        id:
+          typeof issue.id === "string"
+            ? issue.id
+            : typeof issue.type === "string"
+              ? issue.type
+              : `issue-${Math.random().toString(36).slice(2, 8)}`,
+        title:
+          typeof issue.title === "string"
+            ? issue.title
+            : typeof issue.type === "string"
+              ? issue.type
+              : "문제 구역",
         severity:
           issue.severity === "high" ||
           issue.severity === "critical" ||
           issue.severity === "medium" ||
           issue.severity === "major" ||
           issue.severity === "low" ||
-          issue.severity === "minor"
+          issue.severity === "minor" ||
+          issue.severity === "warning" ||
+          issue.severity === "error" ||
+          issue.severity === "info"
             ? issue.severity
             : "minor",
         message: typeof issue.message === "string" ? issue.message : "",
         region: isRecord(issue.region)
-          ? issue.region.type === "rect" &&
+          ? ((issue.region.type === "rect" ||
+              (typeof issue.region.x === "number" &&
+                typeof issue.region.y === "number" &&
+                typeof issue.region.w === "number" &&
+                typeof issue.region.h === "number")) &&
             typeof issue.region.x === "number" &&
             typeof issue.region.y === "number" &&
-            typeof issue.region.width === "number" &&
-            typeof issue.region.height === "number"
+            typeof issue.region.w === "number" &&
+            typeof issue.region.h === "number")
             ? {
                 type: "rect" as const,
                 x: issue.region.x,
                 y: issue.region.y,
-                width: issue.region.width,
-                height: issue.region.height
+                width: issue.region.w,
+                height: issue.region.h
               }
             : issue.region.type === "polygon" && Array.isArray(issue.region.points)
               ? {
@@ -78,11 +104,13 @@ const validateAnalyzeResponse = (value: unknown): AnalyzeResponse => {
                       x: typeof point.x === "number" ? point.x : 0,
                       y: typeof point.y === "number" ? point.y : 0
                     }))
-                }
+              }
               : undefined
           : undefined,
         relatedElementIds: Array.isArray(issue.relatedElementIds)
           ? issue.relatedElementIds.filter((item): item is string => typeof item === "string")
+          : Array.isArray(issue.related_ids)
+            ? issue.related_ids.filter((item): item is string => typeof item === "string")
           : []
       }))
   };

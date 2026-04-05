@@ -590,7 +590,9 @@ const App = () => {
   const addKindFromSheet = (kind: ObjectKind) => {
     setDrawKind(kind);
     createElement(kind);
-    setBottomSheetMode(null);
+    setSelectedElementId(undefined);
+    setBottomSheetMode("object-picker");
+    setNotice(`${catalogItems.find((item) => item.kind === kind)?.label ?? "요소"}를 추가했습니다. 계속 배치할 수 있습니다.`);
   };
 
   const applyRoomPreset = (preset: RoomShapePreset, width = roomWidthInput, height = roomHeightInput) => {
@@ -674,18 +676,26 @@ const App = () => {
             <div className="review-status-card">
               {isAnalysisCurrent && reviewSummary ? (
                 <>
-                  <div className="review-status-card__metrics">
-                    <div>
-                      <span>검토 점수</span>
-                      <strong>{reviewSummary.score}점</strong>
-                    </div>
+              <div className="review-status-card__metrics">
+                <div>
+                  <span>검토 점수</span>
+                  <strong>{reviewSummary.score}점</strong>
+                </div>
                     <div>
                       <span>이슈 수</span>
-                      <strong>{reviewSummary.issues.length}건</strong>
-                    </div>
-                  </div>
-                  <p>{reviewSummary.summary}</p>
-                </>
+                  <strong>{reviewSummary.issues.length}건</strong>
+                </div>
+              </div>
+              {reviewSummary.subscores ? (
+                <div className="review-status-card__subscores">
+                  {typeof reviewSummary.subscores.pathway === "number" ? <span>통로 {reviewSummary.subscores.pathway}</span> : null}
+                  {typeof reviewSummary.subscores.access === "number" ? <span>접근 {reviewSummary.subscores.access}</span> : null}
+                  {typeof reviewSummary.subscores.density === "number" ? <span>밀집 {reviewSummary.subscores.density}</span> : null}
+                  {typeof reviewSummary.subscores.alignment === "number" ? <span>정렬 {reviewSummary.subscores.alignment}</span> : null}
+                </div>
+              ) : null}
+              <p>{reviewSummary.summary}</p>
+            </>
               ) : analysisStatus === "loading" ? (
                 <>
                   <strong>GUI 서버에서 배치를 분석하고 있습니다.</strong>
@@ -1106,6 +1116,18 @@ const App = () => {
                 </div>
               </div>
 
+              {reviewSummary.subscores ? (
+                <section className="sheet-section">
+                  <span className="sheet-section__label">세부 점수</span>
+                  <div className="review-summary__subscores">
+                    {typeof reviewSummary.subscores.pathway === "number" ? <div className="review-summary__subscore"><span>통로</span><strong>{reviewSummary.subscores.pathway}</strong></div> : null}
+                    {typeof reviewSummary.subscores.access === "number" ? <div className="review-summary__subscore"><span>접근</span><strong>{reviewSummary.subscores.access}</strong></div> : null}
+                    {typeof reviewSummary.subscores.density === "number" ? <div className="review-summary__subscore"><span>밀집</span><strong>{reviewSummary.subscores.density}</strong></div> : null}
+                    {typeof reviewSummary.subscores.alignment === "number" ? <div className="review-summary__subscore"><span>정렬</span><strong>{reviewSummary.subscores.alignment}</strong></div> : null}
+                  </div>
+                </section>
+              ) : null}
+
               <p className="review-summary__text">{reviewSummary.summary}</p>
 
               <section className="sheet-section">
@@ -1121,14 +1143,14 @@ const App = () => {
                       <div
                         key={issue.id}
                         className={
-                          issue.severity === "high" || issue.severity === "critical"
+                          issue.severity === "high" || issue.severity === "critical" || issue.severity === "error"
                             ? "review-item review-item--danger"
-                            : issue.severity === "medium" || issue.severity === "major"
+                            : issue.severity === "medium" || issue.severity === "major" || issue.severity === "warning"
                               ? "review-item review-item--warning"
                               : "review-item review-item--safe"
                         }
                       >
-                        <strong>{issue.title}</strong>
+                        <strong>{issue.title || issue.message}</strong>
                         <p>{issue.message}</p>
                       </div>
                     ))

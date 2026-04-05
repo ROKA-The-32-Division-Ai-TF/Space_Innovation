@@ -144,20 +144,23 @@ const getSegmentLabelPoint = (segment: RoomBoundarySegment) => {
 };
 
 const severityPriority: Record<AnalyzeSeverity, number> = {
+  info: 1,
   low: 1,
   minor: 1,
   medium: 2,
   major: 2,
+  warning: 2,
   high: 3,
-  critical: 3
+  critical: 3,
+  error: 3
 };
 
 const normalizeSeverity = (severity: AnalyzeSeverity) => {
-  if (severity === "high" || severity === "critical") {
+  if (severity === "high" || severity === "critical" || severity === "error") {
     return "critical";
   }
 
-  if (severity === "medium" || severity === "major") {
+  if (severity === "medium" || severity === "major" || severity === "warning") {
     return "major";
   }
 
@@ -519,8 +522,10 @@ export const CanvasEditor = ({
 
   const handleCanvasPointerDown = (event: PointerEvent<SVGSVGElement>) => {
     if (zoomLevel > 1 && editorMode === "select") {
-      const svg = svgRef.current;
-      if (svg && event.target === svg && viewportRef.current) {
+      const target = event.target as Element | null;
+      const isElementHit = Boolean(target?.closest("[data-element-hitbox='true']"));
+
+      if (!isElementHit && viewportRef.current) {
         setPanState({
           startX: event.clientX,
           startY: event.clientY,
@@ -657,30 +662,10 @@ export const CanvasEditor = ({
       <div
         ref={viewportRef}
         className={zoomLevel > 1 ? "canvas-viewport canvas-viewport--pan" : "canvas-viewport"}
-        onPointerDown={(event) => {
-          if (zoomLevel <= 1 || !viewportRef.current) {
-            return;
-          }
-
-          setPanState({
-            startX: event.clientX,
-            startY: event.clientY,
-            scrollLeft: viewportRef.current.scrollLeft,
-            scrollTop: viewportRef.current.scrollTop
-          });
-        }}
-        onPointerMove={(event) => {
-          if (!panState || !viewportRef.current) {
-            return;
-          }
-
-          viewportRef.current.scrollLeft = panState.scrollLeft - (event.clientX - panState.startX);
-          viewportRef.current.scrollTop = panState.scrollTop - (event.clientY - panState.startY);
-        }}
         onPointerUp={() => setPanState(null)}
         onPointerLeave={() => setPanState(null)}
       >
-        <div className={zoomLevel > 1 ? "canvas-stage canvas-stage--pan" : "canvas-stage"} style={{ width: `${zoomLevel * 100}%` }}>
+        <div className="canvas-stage" style={{ width: `${zoomLevel * 100}%` }}>
         <svg
           id={svgId}
           ref={svgRef}
@@ -785,6 +770,7 @@ export const CanvasEditor = ({
                   width={width}
                   height={height}
                   fill="transparent"
+                  data-element-hitbox="true"
                   className={selected ? "shape shape--selected" : "shape"}
                   onPointerDown={(event) => handlePointerDown(event, element)}
                 />
