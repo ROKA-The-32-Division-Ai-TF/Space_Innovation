@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { createLayoutNarrative } from "./ai/explainer";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionBar } from "./components/ActionBar";
 import { BottomSheet } from "./components/BottomSheet";
 import { CanvasEditor } from "./components/CanvasEditor";
@@ -7,11 +6,11 @@ import { SideMenu } from "./components/SideMenu";
 import { StepHeader } from "./components/StepHeader";
 import { catalogItems } from "./data/catalog";
 import { sampleBarracksLayout, sampleOfficeLayout, sampleStorageLayout } from "./data/sampleLayouts";
+import { buildAnalyzeRequest } from "./engine/analyzeAdapter";
 import { exportCanvasToPng } from "./engine/exportPng";
-import { generateRoomGptLayouts } from "./engine/autoLayout";
 import { buildRoomShapePreset, clampElementToRoom, generateElementId } from "./engine/geometry";
-import { buildImprovementSuggestions } from "./engine/layoutSuggestions";
-import { getDefaultRuleSet, reviewLayout } from "./engine/ruleEngine";
+import { analyzeWithGuiServer, checkGuiServerHealth, loadInitialApiBaseUrl, normalizeApiBaseUrl, saveApiBaseUrl, validateApiBaseUrl } from "./engine/guiServer";
+import { AnalyzeResponse } from "./types/analyze";
 import {
   BottomSheetMode,
   EditorMode,
@@ -88,10 +87,17 @@ const workflowMeta: Record<WorkflowStep, { label: string; hint: string; primaryL
   },
   review: {
     label: "검토",
-    hint: "통로, 문 전방, 밀집도를 색상으로 확인하고 PNG로 바로 내보낼 수 있습니다.",
+    hint: "GUI 서버가 반환한 점수와 문제 구역을 확인하고, 현재 화면 그대로 PNG로 내보낼 수 있습니다.",
     primaryLabel: "PNG"
   }
 };
+
+const serverStatusMeta = {
+  idle: { label: "연결 안 됨", tone: "idle" },
+  checking: { label: "확인 중", tone: "checking" },
+  connected: { label: "연결됨", tone: "connected" },
+  error: { label: "오류", tone: "error" }
+} as const;
 
 const openingKinds: ObjectKind[] = ["door", "window", "pillar"];
 const furnitureKinds: ObjectKind[] = ["bed", "locker", "desk", "chair", "storage", "equipment", "board"];
@@ -138,7 +144,6 @@ const createBlankLayout = (option?: SpaceTypeOption): SpaceLayout => {
 };
 
 const App = () => {
-  const ruleSet = useMemo(() => getDefaultRuleSet(), []);
   const [layout, setLayout] = useState<SpaceLayout>(() => createBlankLayout());
   const [selectedSpaceType, setSelectedSpaceType] = useState<SpaceTypeOption>();
   const [workflowStep, setWorkflowStep] = useState<WorkflowStep>("space");
@@ -148,25 +153,29 @@ const App = () => {
   const [drawKind, setDrawKind] = useState<ObjectKind>("door");
   const [roomDrawTool, setRoomDrawTool] = useState<RoomDrawTool>("line");
   const [curveDirection, setCurveDirection] = useState<1 | -1>(1);
-  const [reviewOverlayVisible, setReviewOverlayVisible] = useState(false);
   const [roomWidthInput, setRoomWidthInput] = useState(800);
   const [roomHeightInput, setRoomHeightInput] = useState(600);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [sideMenuOpen, setSideMenuOpen] = useState(false);
   const [notice, setNotice] = useState<string>();
+  const [apiBaseUrl, setApiBaseUrl] = useState(() => loadInitialApiBaseUrl());
+  const [serverStatus, setServerStatus] = useState<"idle" | "checking" | "connected" | "error">("idle");
+  const [serverError, setServerError] = useState<string>();
+  const [analysisStatus, setAnalysisStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [analysisResult, setAnalysisResult] = useState<AnalyzeResponse | null>(null);
+  const [analysisError, setAnalysisError] = useState<string>();
+  const [lastAnalyzedLayoutKey, setLastAnalyzedLayoutKey] = useState<string>();
+  const hasAttemptedAutoConnect = useRef(false);
 
   const selectedElement = layout.elements.find((element) => element.id === selectedElementId);
-  const review = useMemo(() => reviewLayout(layout, ruleSet), [layout, ruleSet]);
-  const suggestions = useMemo(() => buildImprovementSuggestions(layout, review).slice(0, 3), [layout, review]);
-  const narrative = useMemo(() => createLayoutNarrative(layout, review), [layout, review]);
-  const alternatives = useMemo(
-    () => (workflowStep === "review" ? generateRoomGptLayouts(layout).slice(0, 3) : []),
-    [layout, workflowStep]
+  const analyzePayload = useMemo(
+    () => buildAnalyzeRequest(layout, selectedSpaceType?.label ?? layout.layoutCategory),
+    [layout, selectedSpaceType?.label]
   );
-
-  useEffect(() => {
-    setReviewOverlayVisible(workflowStep === "review");
-  }, [workflowStep]);
+  const currentLayoutKey = useMemo(() => JSON.stringify(analyzePayload), [analyzePayload]);
+  const isAnalysisCurrent = Boolean(analysisResult && analysisStatus === "success" && lastAnalyzedLayoutKey === currentLayoutKey);
+  const reviewSummary = isAnalysisCurrent ? analysisResult : null;
+  const serverStatusInfo = serverStatusMeta[serverStatus];
 
   useEffect(() => {
     document.body.classList.toggle("theme-dark", isDarkMode);
@@ -179,6 +188,25 @@ const App = () => {
     setRoomWidthInput(layout.room.width);
     setRoomHeightInput(layout.room.height);
   }, [layout.room.height, layout.room.width]);
+
+  useEffect(() => {
+    saveApiBaseUrl(apiBaseUrl);
+    setServerStatus((current) => (current === "connected" || current === "error" ? "idle" : current));
+    setServerError(undefined);
+    setAnalysisStatus("idle");
+    setAnalysisResult(null);
+    setAnalysisError(undefined);
+    setLastAnalyzedLayoutKey(undefined);
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!apiBaseUrl || hasAttemptedAutoConnect.current) {
+      return;
+    }
+
+    hasAttemptedAutoConnect.current = true;
+    void checkServerConnection(true);
+  }, [apiBaseUrl]);
 
   const updateElement = (elementId: string, patch: Partial<LayoutElement>) => {
     setLayout((currentLayout) => ({
@@ -261,6 +289,61 @@ const App = () => {
     setEditorMode("select");
   };
 
+  const openServerMenu = (message?: string) => {
+    setSideMenuOpen(true);
+    if (message) {
+      setNotice(message);
+    }
+  };
+
+  const checkServerConnection = async (silent = false) => {
+    try {
+      const normalized = validateApiBaseUrl(apiBaseUrl);
+      setApiBaseUrl(normalized);
+      setServerStatus("checking");
+      setServerError(undefined);
+      const health = await checkGuiServerHealth(normalized);
+      setServerStatus("connected");
+      if (!silent) {
+        setNotice(health.version ? `GUI 서버에 연결되었습니다. (${health.version})` : "GUI 서버에 연결되었습니다.");
+      }
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "서버에 연결할 수 없습니다.";
+      setServerStatus("error");
+      setServerError(message);
+      if (!silent) {
+        setNotice(message);
+      }
+      return false;
+    }
+  };
+
+  const runServerAnalysis = async () => {
+    if (serverStatus !== "connected") {
+      openServerMenu("검토 전 GUI 서버 연결 확인이 필요합니다.");
+      return;
+    }
+
+    setAnalysisStatus("loading");
+    setAnalysisError(undefined);
+
+    try {
+      const nextResult = await analyzeWithGuiServer(apiBaseUrl, analyzePayload);
+      setAnalysisResult(nextResult);
+      setAnalysisStatus("success");
+      setLastAnalyzedLayoutKey(currentLayoutKey);
+      setBottomSheetMode("review-summary");
+      setNotice("서버 분석 결과를 불러왔습니다.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "배치 분석에 실패했습니다.";
+      setAnalysisStatus("error");
+      setAnalysisError(message);
+      setLastAnalyzedLayoutKey(undefined);
+      setNotice(message);
+    }
+  };
+
   const deleteSelectedElement = () => {
     if (!selectedElement || selectedElement.locked) {
       return;
@@ -295,6 +378,10 @@ const App = () => {
     setRoomWidthInput(nextLayout.room.width);
     setRoomHeightInput(nextLayout.room.height);
     setSideMenuOpen(false);
+    setAnalysisStatus("idle");
+    setAnalysisResult(null);
+    setAnalysisError(undefined);
+    setLastAnalyzedLayoutKey(undefined);
     setNotice(`${option.label} 기본 사각형 도면을 불러왔습니다. 그대로 사용하거나 가로/세로를 먼저 맞춰보세요.`);
   };
 
@@ -306,6 +393,10 @@ const App = () => {
     setBottomSheetMode(workflowStep === "space" ? "space-type" : null);
     setRoomWidthInput(nextLayout.room.width);
     setRoomHeightInput(nextLayout.room.height);
+    setAnalysisStatus("idle");
+    setAnalysisResult(null);
+    setAnalysisError(undefined);
+    setLastAnalyzedLayoutKey(undefined);
     setNotice("현재 공간을 초기 상태로 되돌렸습니다.");
   };
 
@@ -375,6 +466,11 @@ const App = () => {
       return;
     }
 
+    if (!isAnalysisCurrent) {
+      await runServerAnalysis();
+      return;
+    }
+
     const svgElement = document.getElementById("layout-export-surface") as SVGSVGElement | null;
     if (!svgElement) {
       setNotice("도면을 내보낼 수 있는 캔버스를 찾지 못했습니다.");
@@ -386,7 +482,7 @@ const App = () => {
         svgElement,
         fileName: `${selectedSpaceType?.label ?? "space-layout"}-${Date.now()}.png`,
         title: `${selectedSpaceType?.label ?? layout.room.name} · ${layout.name}`,
-        subtitle: `규정 준수율 ${review.compliantScore}% · 위반 ${review.violations.length}건`
+        subtitle: `검토 점수 ${reviewSummary?.score ?? 0}점 · 이슈 ${reviewSummary?.issues.length ?? 0}건`
       });
       setBottomSheetMode("export");
       setNotice("PNG 이미지를 다운로드했습니다.");
@@ -396,10 +492,11 @@ const App = () => {
   };
 
   const currentHint = workflowMeta[workflowStep].hint;
-  const primaryLabel = workflowMeta[workflowStep].primaryLabel;
+  const primaryLabel =
+    workflowStep === "review" ? (analysisStatus === "loading" ? "분석 중..." : isAnalysisCurrent ? "PNG" : "분석") : workflowMeta[workflowStep].primaryLabel;
   const canDelete = Boolean(selectedElement && !selectedElement.locked);
   const canRotate = Boolean(selectedElement);
-  const primaryDisabled = false;
+  const primaryDisabled = analysisStatus === "loading";
   const currentPickerKinds = workflowStep === "openings" ? openingKinds : furnitureKinds;
   const canEditElement = Boolean(selectedElement);
   const actionBarItems =
@@ -529,6 +626,8 @@ const App = () => {
         currentStep={workflowStep}
         currentHint={currentHint}
         selectedSpaceLabel={selectedSpaceType?.label}
+        serverStatusLabel={serverStatusInfo.label}
+        serverStatusTone={serverStatusInfo.tone}
         onToggleTheme={() => {
           setIsDarkMode((current) => {
             const next = !current;
@@ -571,6 +670,46 @@ const App = () => {
             </div>
           ) : null}
 
+          {workflowStep === "review" ? (
+            <div className="review-status-card">
+              {isAnalysisCurrent && reviewSummary ? (
+                <>
+                  <div className="review-status-card__metrics">
+                    <div>
+                      <span>검토 점수</span>
+                      <strong>{reviewSummary.score}점</strong>
+                    </div>
+                    <div>
+                      <span>이슈 수</span>
+                      <strong>{reviewSummary.issues.length}건</strong>
+                    </div>
+                  </div>
+                  <p>{reviewSummary.summary}</p>
+                </>
+              ) : analysisStatus === "loading" ? (
+                <>
+                  <strong>GUI 서버에서 배치를 분석하고 있습니다.</strong>
+                  <p>현재 도면은 그대로 유지되며, 완료되면 문제 구역과 요약이 표시됩니다.</p>
+                </>
+              ) : serverStatus !== "connected" ? (
+                <>
+                  <strong>검토 전에 GUI 서버 연결이 필요합니다.</strong>
+                  <p>Windows GUI에서 표시된 주소를 메뉴에 입력한 뒤 연결 확인을 눌러주세요.</p>
+                </>
+              ) : analysisResult ? (
+                <>
+                  <strong>배치가 변경되어 이전 분석 결과가 오래되었습니다.</strong>
+                  <p>하단의 분석 버튼을 다시 눌러 최신 검토 결과를 받아오세요.</p>
+                </>
+              ) : (
+                <>
+                  <strong>서버 분석을 아직 실행하지 않았습니다.</strong>
+                  <p>하단의 분석 버튼을 누르면 현재 배치 JSON을 GUI 서버에 보내 검토 결과를 받아옵니다.</p>
+                </>
+              )}
+            </div>
+          ) : null}
+
           <CanvasEditor
             layout={layout}
             selectedElementId={selectedElementId}
@@ -579,8 +718,8 @@ const App = () => {
             helperText={currentHint}
             roomDrawTool={roomDrawTool}
             curveDirection={curveDirection}
-            review={review}
-            showReviewOverlay={reviewOverlayVisible}
+            analysisResult={reviewSummary}
+            showAnalysisOverlay={workflowStep === "review" && isAnalysisCurrent}
             onSelectElement={setSelectedElementId}
             onUpdateElement={updateElement}
             onCreateElement={(kind, rect) => createElement(kind, rect)}
@@ -811,6 +950,38 @@ const App = () => {
         ) : null}
 
         <div className="sheet-section">
+          <span className="sheet-section__label">GUI 서버 연결</span>
+          <p className="sheet-section__helper">Windows GUI에서 표시된 주소를 그대로 입력하세요. 예: http://192.168.0.10:8000</p>
+          <label className="server-connection-field">
+            서버 주소
+            <input
+              placeholder="http://192.168.0.10:8000"
+              type="text"
+              value={apiBaseUrl}
+              onChange={(event) => setApiBaseUrl(normalizeApiBaseUrl(event.target.value))}
+            />
+          </label>
+          <div className="sheet-inline-grid">
+            <button className="sheet-chip" onClick={() => void checkServerConnection()} type="button">
+              연결 확인
+            </button>
+            {workflowStep === "review" ? (
+              <button
+                className="sheet-chip"
+                disabled={analysisStatus === "loading" || serverStatus !== "connected"}
+                onClick={() => void runServerAnalysis()}
+                type="button"
+              >
+                분석 실행
+              </button>
+            ) : null}
+          </div>
+          <div className={`server-status-badge server-status-badge--${serverStatusInfo.tone}`}>{serverStatusInfo.label}</div>
+          {serverError ? <p className="sheet-section__helper">{serverError}</p> : null}
+          {analysisError && workflowStep === "review" ? <p className="sheet-section__helper">{analysisError}</p> : null}
+        </div>
+
+        <div className="sheet-section">
           <span className="sheet-section__label">공통</span>
           <div className="sheet-inline-grid">
             <button className="sheet-chip" onClick={resetCurrentLayout} type="button">
@@ -908,85 +1079,93 @@ const App = () => {
       <BottomSheet
         open={bottomSheetMode === "review-summary"}
         title="배치 검토 결과"
-        subtitle="핵심 위반과 권고만 우선 보여주고, 상세 수치는 최소한으로 유지합니다."
+        subtitle="GUI 서버가 반환한 점수, 문제 구역, 제안을 그대로 보여줍니다."
         onClose={() => setBottomSheetMode(null)}
       >
         <div className="review-summary">
-          <div className="review-summary__hero">
-            <div>
-              <span>규정 준수율</span>
-              <strong>{review.compliantScore}%</strong>
+          {serverStatus !== "connected" ? (
+            <div className="review-item review-item--warning">
+              <strong>GUI 서버 연결이 필요합니다.</strong>
+              <p>메뉴에서 Windows GUI가 표시한 주소를 입력한 뒤 연결 확인을 먼저 진행해주세요.</p>
             </div>
-            <div>
-              <span>충족 규칙</span>
-              <strong>
-                {review.passedRules}/{review.totalRules}
-              </strong>
+          ) : analysisStatus === "loading" ? (
+            <div className="review-item">
+              <strong>분석을 진행 중입니다.</strong>
+              <p>현재 배치를 서버에 보내 점수와 문제 구역을 계산하고 있습니다.</p>
             </div>
-          </div>
-
-          <p className="review-summary__text">{narrative.summary}</p>
-
-          <section className="sheet-section">
-            <span className="sheet-section__label">주요 위반</span>
-            <div className="review-list">
-              {review.violations.length === 0 ? (
-                <div className="review-item review-item--safe">
-                  <strong>위반 항목이 없습니다.</strong>
-                  <p>현재 배치는 룰 엔진 기준에서 주요 규칙을 충족하고 있습니다.</p>
+          ) : isAnalysisCurrent && reviewSummary ? (
+            <>
+              <div className="review-summary__hero">
+                <div>
+                  <span>검토 점수</span>
+                  <strong>{reviewSummary.score}점</strong>
                 </div>
-              ) : (
-                review.violations.slice(0, 3).map((violation) => (
-                  <div
-                    key={violation.id}
-                    className={
-                      violation.severity === "critical"
-                        ? "review-item review-item--danger"
-                        : violation.severity === "major"
-                          ? "review-item review-item--warning"
-                          : "review-item review-item--safe"
-                    }
-                  >
-                    <strong>{violation.message}</strong>
-                    <p>{violation.details}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="sheet-section">
-            <span className="sheet-section__label">개선 권고</span>
-            <div className="review-list">
-              {suggestions.slice(0, 3).map((suggestion) => (
-                <div key={suggestion.title} className="review-item">
-                  <strong>{suggestion.title}</strong>
-                  <p>{suggestion.description}</p>
+                <div>
+                  <span>문제 구역</span>
+                  <strong>{reviewSummary.issues.length}건</strong>
                 </div>
-              ))}
-            </div>
-          </section>
+              </div>
 
-          <section className="sheet-section">
-            <span className="sheet-section__label">추천 배치안</span>
-            <div className="sheet-option-grid">
-              {alternatives.map((alternative) => (
-                <button
-                  key={alternative.id}
-                  className="sheet-option-card"
-                  onClick={() => {
-                    setLayout(structuredClone(alternative));
-                    setSelectedElementId(undefined);
-                    setNotice(`${alternative.name}을(를) 적용했습니다.`);
-                  }}
-                  type="button"
-                >
-                  <strong>{alternative.name}</strong>
-                  <p>{alternative.description}</p>
-                </button>
-              ))}
+              <p className="review-summary__text">{reviewSummary.summary}</p>
+
+              <section className="sheet-section">
+                <span className="sheet-section__label">주요 이슈</span>
+                <div className="review-list">
+                  {reviewSummary.issues.length === 0 ? (
+                    <div className="review-item review-item--safe">
+                      <strong>표시할 이슈가 없습니다.</strong>
+                      <p>현재 서버 분석 결과 기준으로 강조할 문제 구역이 없습니다.</p>
+                    </div>
+                  ) : (
+                    reviewSummary.issues.slice(0, 3).map((issue) => (
+                      <div
+                        key={issue.id}
+                        className={
+                          issue.severity === "high" || issue.severity === "critical"
+                            ? "review-item review-item--danger"
+                            : issue.severity === "medium" || issue.severity === "major"
+                              ? "review-item review-item--warning"
+                              : "review-item review-item--safe"
+                        }
+                      >
+                        <strong>{issue.title}</strong>
+                        <p>{issue.message}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="sheet-section">
+                <span className="sheet-section__label">개선 제안</span>
+                <div className="review-list">
+                  {reviewSummary.suggestions.length === 0 ? (
+                    <div className="review-item">
+                      <strong>제안이 없습니다.</strong>
+                      <p>이번 응답에는 추가 개선 제안이 포함되지 않았습니다.</p>
+                    </div>
+                  ) : (
+                    reviewSummary.suggestions.slice(0, 3).map((suggestion, index) => (
+                      <div key={`${suggestion}-${index}`} className="review-item">
+                        <strong>제안 {index + 1}</strong>
+                        <p>{suggestion}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            </>
+          ) : analysisError ? (
+            <div className="review-item review-item--danger">
+              <strong>분석 요청에 실패했습니다.</strong>
+              <p>{analysisError}</p>
             </div>
-          </section>
+          ) : (
+            <div className="review-item">
+              <strong>최신 검토 결과가 없습니다.</strong>
+              <p>하단의 분석 버튼을 눌러 현재 배치 JSON을 GUI 서버에 전송하세요.</p>
+            </div>
+          )}
         </div>
       </BottomSheet>
 

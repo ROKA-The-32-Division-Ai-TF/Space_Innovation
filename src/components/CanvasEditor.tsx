@@ -1,15 +1,8 @@
 import { PointerEvent, ReactNode, useMemo, useRef, useState } from "react";
-import { ReviewSummary, EditorMode, LayoutElement, ObjectKind, Point, RoomBoundarySegment, RoomDrawTool, SpaceLayout } from "../types/layout";
+import { EditorMode, LayoutElement, ObjectKind, Point, RoomBoundarySegment, RoomDrawTool, SpaceLayout } from "../types/layout";
+import { AnalyzeResponse, AnalyzeSeverity } from "../types/analyze";
 import { catalogItems } from "../data/catalog";
-import {
-  boundarySegmentsToPath,
-  createArcSegment,
-  createBandRect,
-  createDoorFrontZone,
-  createLineSegment,
-  flattenBoundarySegments,
-  normalizeElementRect
-} from "../engine/geometry";
+import { boundarySegmentsToPath, createArcSegment, createLineSegment, flattenBoundarySegments } from "../engine/geometry";
 
 interface CanvasEditorProps {
   layout: SpaceLayout;
@@ -19,8 +12,8 @@ interface CanvasEditorProps {
   helperText: string;
   roomDrawTool: RoomDrawTool;
   curveDirection: 1 | -1;
-  review?: ReviewSummary;
-  showReviewOverlay?: boolean;
+  analysisResult?: AnalyzeResponse | null;
+  showAnalysisOverlay?: boolean;
   svgId?: string;
   onSelectElement: (elementId: string | undefined) => void;
   onUpdateElement: (elementId: string, patch: Partial<LayoutElement>) => void;
@@ -39,7 +32,7 @@ interface VisualProps {
   width: number;
   height: number;
   selected: boolean;
-  severity?: ReviewSummary["violations"][number]["severity"];
+  severity?: AnalyzeSeverity;
 }
 
 interface DraftRectState {
@@ -150,20 +143,99 @@ const getSegmentLabelPoint = (segment: RoomBoundarySegment) => {
   };
 };
 
-const severityPriority: Record<NonNullable<ReviewSummary["violations"][number]["severity"]>, number> = {
+const severityPriority: Record<AnalyzeSeverity, number> = {
+  low: 1,
   minor: 1,
+  medium: 2,
   major: 2,
+  high: 3,
   critical: 3
 };
 
+const normalizeSeverity = (severity: AnalyzeSeverity) => {
+  if (severity === "high" || severity === "critical") {
+    return "critical";
+  }
+
+  if (severity === "medium" || severity === "major") {
+    return "major";
+  }
+
+  return "minor";
+};
+
+const severityText = (severity: AnalyzeSeverity) => {
+  const normalized = normalizeSeverity(severity);
+  return normalized === "critical" ? "심각" : normalized === "major" ? "주의" : "알림";
+};
+
+const getSeverityFill = (severity?: AnalyzeSeverity) => {
+  const normalized = severity ? normalizeSeverity(severity) : "minor";
+
+  if (normalized === "critical") {
+    return "#fff4f1";
+  }
+
+  if (normalized === "major") {
+    return "#fff9ef";
+  }
+
+  return "#f8fafc";
+};
+
+const getSeverityStroke = (severity?: AnalyzeSeverity, selected?: boolean) => {
+  if (selected) {
+    return "#0f766e";
+  }
+
+  const normalized = severity ? normalizeSeverity(severity) : "minor";
+
+  if (normalized === "critical") {
+    return "#b42318";
+  }
+
+  if (normalized === "major") {
+    return "#b66a00";
+  }
+
+  return "#415364";
+};
+
+const severityClassForHalo = (severity: AnalyzeSeverity) => {
+  const normalized = normalizeSeverity(severity);
+  return normalized === "critical"
+    ? "element-review-halo--critical"
+    : normalized === "major"
+      ? "element-review-halo--major"
+      : "element-review-halo--minor";
+};
+
+const severityClassForZone = (severity: AnalyzeSeverity) => {
+  const normalized = normalizeSeverity(severity);
+  return normalized === "critical"
+    ? "review-zone review-zone--critical"
+    : normalized === "major"
+      ? "review-zone review-zone--major"
+      : "review-zone review-zone--minor";
+};
+
+const severityClassForChip = (severity: AnalyzeSeverity) => {
+  const normalized = normalizeSeverity(severity);
+  return normalized === "critical"
+    ? "review-chip review-chip--critical"
+    : normalized === "major"
+      ? "review-chip review-chip--major"
+      : "review-chip review-chip--minor";
+};
+
 const FurnitureVisual = ({ element, width, height, selected, severity }: VisualProps) => {
-  const baseStroke = severity === "critical" ? "#b42318" : severity === "major" ? "#b66a00" : "#415364";
-  const accentStroke = selected ? "#0f766e" : baseStroke;
-  const panelFill = "rgba(250, 251, 252, 0.98)";
+  const baseStroke = getSeverityStroke(severity, selected);
+  const accentStroke = baseStroke;
+  const panelFill = getSeverityFill(severity);
   const mutedFill = "rgba(230, 235, 239, 0.95)";
   const steelFill = "rgba(214, 222, 229, 0.98)";
   const textileFill = "rgba(229, 237, 244, 0.98)";
-  const emphasisFill = severity === "critical" ? "rgba(252, 236, 233, 0.92)" : severity === "major" ? "rgba(255, 245, 220, 0.96)" : panelFill;
+  const emphasisFill = panelFill;
 
   if (element.kind === "bed") {
     return (
@@ -296,8 +368,8 @@ export const CanvasEditor = ({
   helperText,
   roomDrawTool,
   curveDirection,
-  review,
-  showReviewOverlay = false,
+  analysisResult,
+  showAnalysisOverlay = false,
   svgId = "layout-export-surface",
   onSelectElement,
   onUpdateElement,
@@ -319,47 +391,24 @@ export const CanvasEditor = ({
     scrollTop: number;
   } | null>(null);
 
-  const mainBand = useMemo(() => createBandRect(layout.room, "vertical_band", 340, 120), [layout.room]);
-  const subBand = useMemo(() => createBandRect(layout.room, "horizontal_band", 250, 80), [layout.room]);
-
   const violationElementSeverity = useMemo(() => {
-    const severityMap = new Map<string, ReviewSummary["violations"][number]["severity"]>();
+    const severityMap = new Map<string, AnalyzeSeverity>();
 
-    if (!showReviewOverlay || !review) {
+    if (!showAnalysisOverlay || !analysisResult) {
       return severityMap;
     }
 
-    review.violations.forEach((violation) => {
-      violation.elementIds.forEach((elementId) => {
+    analysisResult.issues.forEach((issue) => {
+      issue.relatedElementIds?.forEach((elementId) => {
         const current = severityMap.get(elementId);
-        if (!current || severityPriority[violation.severity] > severityPriority[current]) {
-          severityMap.set(elementId, violation.severity);
+        if (!current || severityPriority[issue.severity] > severityPriority[current]) {
+          severityMap.set(elementId, issue.severity);
         }
       });
     });
 
     return severityMap;
-  }, [review, showReviewOverlay]);
-
-  const doorFrontZones = useMemo(() => {
-    if (!showReviewOverlay || !review || !review.violations.some((violation) => violation.ruleId === "door_front_clearance")) {
-      return [];
-    }
-
-    return layout.elements
-      .filter((element) => element.kind === "door")
-      .map((door) => createDoorFrontZone(normalizeElementRect(door), layout.room, 100));
-  }, [layout.elements, layout.room, review, showReviewOverlay]);
-
-  const restrictedDoorZones = useMemo(() => {
-    if (!showReviewOverlay || !review || !review.violations.some((violation) => violation.ruleId === "equipment_near_door")) {
-      return [];
-    }
-
-    return layout.elements
-      .filter((element) => element.kind === "door")
-      .map((door) => createDoorFrontZone(normalizeElementRect(door), layout.room, 120));
-  }, [layout.elements, layout.room, review, showReviewOverlay]);
+  }, [analysisResult, showAnalysisOverlay]);
 
   const toCanvasPoint = (event: PointerEvent<SVGRectElement | SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -552,18 +601,6 @@ export const CanvasEditor = ({
   const modeLabel =
     editorMode === "draw-room" ? "벽 그리기" : editorMode === "draw-element" ? `${catalogItems.find((item) => item.kind === drawKind)?.label ?? "요소"} 추가` : "선택";
 
-  const mainBandTone = !showReviewOverlay
-    ? "corridor-band corridor-band--neutral"
-    : review?.violations.some((violation) => violation.ruleId === "main_corridor_min_width")
-      ? "corridor-band corridor-band--danger"
-      : "corridor-band corridor-band--safe";
-
-  const subBandTone = !showReviewOverlay
-    ? "corridor-band corridor-band--neutral"
-    : review?.violations.some((violation) => violation.ruleId === "sub_corridor_min_width")
-      ? "corridor-band corridor-band--warning"
-      : "corridor-band corridor-band--safe";
-
   const renderSegmentTag = (segment: RoomBoundarySegment, key: string): ReactNode => {
     const labelPoint = getSegmentLabelPoint(segment);
     const length = getSegmentLength(segment);
@@ -665,34 +702,36 @@ export const CanvasEditor = ({
 
           {roomPath ? <path d={roomPath} className="room-boundary-path" /> : null}
 
-          {showReviewOverlay && roomPath ? (
+          {showAnalysisOverlay && roomPath ? (
             <g clipPath="url(#room-clip)">
-              <rect x={mainBand.x} y={mainBand.y} width={mainBand.width} height={mainBand.height} className={mainBandTone} />
-              <rect x={subBand.x} y={subBand.y} width={subBand.width} height={subBand.height} className={subBandTone} />
-              {doorFrontZones.map((zone) => (
-                <rect
-                  key={zone.id}
-                  x={zone.x}
-                  y={zone.y}
-                  width={zone.width}
-                  height={zone.height}
-                  className="review-zone review-zone--danger"
-                  rx={6}
-                  ry={6}
-                />
-              ))}
-              {restrictedDoorZones.map((zone) => (
-                <rect
-                  key={`${zone.id}-restricted`}
-                  x={zone.x}
-                  y={zone.y}
-                  width={zone.width}
-                  height={zone.height}
-                  className="review-zone review-zone--warning"
-                  rx={6}
-                  ry={6}
-                />
-              ))}
+              {analysisResult?.issues.map((issue) => {
+                if (!issue.region) {
+                  return null;
+                }
+
+                if (issue.region.type === "rect") {
+                  return (
+                    <rect
+                      key={issue.id}
+                      x={issue.region.x}
+                      y={issue.region.y}
+                      width={issue.region.width}
+                      height={issue.region.height}
+                      className={severityClassForZone(issue.severity)}
+                      rx={6}
+                      ry={6}
+                    />
+                  );
+                }
+
+                return (
+                  <polygon
+                    key={issue.id}
+                    points={pointsToString(issue.region.points)}
+                    className={severityClassForZone(issue.severity)}
+                  />
+                );
+              })}
             </g>
           ) : null}
 
@@ -728,7 +767,17 @@ export const CanvasEditor = ({
 
             return (
               <g key={element.id} transform={`translate(${element.x}, ${element.y})`} style={{ opacity: element.opacity ?? 1 }}>
-                {showReviewOverlay && severity ? <rect x={-4} y={-4} width={width + 8} height={height + 8} className={severity === "critical" ? "element-review-halo element-review-halo--danger" : "element-review-halo element-review-halo--warning"} rx={10} ry={10} /> : null}
+                {showAnalysisOverlay && severity ? (
+                  <rect
+                    x={-4}
+                    y={-4}
+                    width={width + 8}
+                    height={height + 8}
+                    className={`element-review-halo ${severityClassForHalo(severity)}`}
+                    rx={10}
+                    ry={10}
+                  />
+                ) : null}
                 <FurnitureVisual element={element} width={width} height={height} selected={selected} severity={severity} />
                 <rect
                   x={0}
@@ -752,6 +801,17 @@ export const CanvasEditor = ({
               <text x={draftDimensions.x + 10} y={draftDimensions.y + 20} className="draft-label">
                 {Math.round(draftDimensions.width)} x {Math.round(draftDimensions.height)}cm
               </text>
+            </g>
+          ) : null}
+
+          {showAnalysisOverlay && analysisResult?.issues.length ? (
+            <g pointerEvents="none">
+              {analysisResult.issues.slice(0, 3).map((issue, index) => (
+                <text key={`issue-label-${issue.id}`} x={24} y={28 + index * 22} className="analysis-legend-text">
+                  <tspan className={severityClassForChip(issue.severity)}>{severityText(issue.severity)}</tspan>
+                  <tspan dx={8}>{issue.title || issue.message}</tspan>
+                </text>
+              ))}
             </g>
           ) : null}
         </svg>

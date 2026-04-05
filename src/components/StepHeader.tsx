@@ -5,6 +5,8 @@ interface StepHeaderProps {
   currentStep: WorkflowStep;
   currentHint: string;
   selectedSpaceLabel?: string;
+  serverStatusLabel: string;
+  serverStatusTone: "idle" | "checking" | "connected" | "error";
   onChangeSpace: () => void;
   onToggleTheme: () => void;
 }
@@ -17,13 +19,27 @@ const stepItems: { id: WorkflowStep; label: string }[] = [
   { id: "review", label: "검토" }
 ];
 
-export const StepHeader = ({ currentStep, currentHint, selectedSpaceLabel, onChangeSpace, onToggleTheme }: StepHeaderProps) => {
+export const StepHeader = ({
+  currentStep,
+  currentHint,
+  selectedSpaceLabel,
+  serverStatusLabel,
+  serverStatusTone,
+  onChangeSpace,
+  onToggleTheme
+}: StepHeaderProps) => {
   const currentIndex = stepItems.findIndex((item) => item.id === currentStep);
 
   return (
     <header className="step-header">
       <div className="step-header__brand">
-        <UnitBadge onClick={onToggleTheme} />
+        <div className="step-header__badge-stack">
+          <UnitBadge onClick={onToggleTheme} />
+          <div className={`header-server-status header-server-status--${serverStatusTone}`}>
+            <span className="header-server-status__dot" />
+            <strong>{serverStatusLabel}</strong>
+          </div>
+        </div>
         <div className="step-header__copy">
           <span className="step-header__eyebrow">32사단 공간 배치 검토 도구</span>
           <div className="step-header__title-row">
