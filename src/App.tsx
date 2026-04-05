@@ -424,6 +424,24 @@ const App = () => {
     setBottomSheetMode("object-picker");
   };
 
+  const confirmOpeningsStep = () => {
+    const hasDoor = layout.elements.some((element) => element.kind === "door");
+    setWorkflowStep("furniture");
+    setBottomSheetMode("object-picker");
+    setDrawKind("bed");
+    setEditorMode("select");
+    setSelectedElementId(undefined);
+    setNotice(hasDoor ? "문/창문 배치를 확정했습니다. 이제 가구를 추가해보세요." : "문 없이 확정했습니다. 필요하면 이전 단계로 돌아가 문을 추가할 수 있습니다.");
+  };
+
+  const confirmFurnitureStep = () => {
+    setWorkflowStep("review");
+    setBottomSheetMode("review-summary");
+    setEditorMode("select");
+    setSelectedElementId(undefined);
+    setNotice("가구 배치를 확정했습니다. 이제 검토 결과를 확인할 수 있습니다.");
+  };
+
   const advanceStep = async () => {
     if (workflowStep === "space") {
       setSideMenuOpen(true);
@@ -443,26 +461,6 @@ const App = () => {
       setEditorMode("select");
       setSelectedElementId(undefined);
       setNotice("문과 창문을 배치해주세요.");
-      return;
-    }
-
-    if (workflowStep === "openings") {
-      const hasDoor = layout.elements.some((element) => element.kind === "door");
-      setWorkflowStep("furniture");
-      setBottomSheetMode("object-picker");
-      setDrawKind("bed");
-      setEditorMode("select");
-      setSelectedElementId(undefined);
-      setNotice(hasDoor ? "가구를 추가해보세요." : "문이 없는 상태로 가구 배치 단계로 이동했습니다. 필요하면 문을 먼저 추가하세요.");
-      return;
-    }
-
-    if (workflowStep === "furniture") {
-      setWorkflowStep("review");
-      setBottomSheetMode("review-summary");
-      setEditorMode("select");
-      setSelectedElementId(undefined);
-      setNotice("검토 결과를 확인하고 PNG로 내보낼 수 있습니다.");
       return;
     }
 
@@ -565,16 +563,9 @@ const App = () => {
                   }
                 },
                 {
-                  key: "next",
-                  label: "가구",
-                  onClick: () => {
-                    setWorkflowStep("furniture");
-                    setBottomSheetMode("object-picker");
-                    setDrawKind("bed");
-                    setEditorMode("select");
-                    setSelectedElementId(undefined);
-                    setNotice("가구를 추가해보세요.");
-                  }
+                  key: "confirm",
+                  label: "확정",
+                  onClick: confirmOpeningsStep
                 }
               ]
             : workflowStep === "furniture"
@@ -595,15 +586,9 @@ const App = () => {
                     }
                   },
                   {
-                    key: "review-step",
-                    label: "검토 이동",
-                    onClick: () => {
-                      setWorkflowStep("review");
-                      setBottomSheetMode("review-summary");
-                      setEditorMode("select");
-                      setSelectedElementId(undefined);
-                      setNotice("검토 결과를 확인하고 PNG로 내보낼 수 있습니다.");
-                    }
+                    key: "confirm",
+                    label: "확정",
+                    onClick: confirmFurnitureStep
                   },
                   ...(canEditElement
                     ? [
