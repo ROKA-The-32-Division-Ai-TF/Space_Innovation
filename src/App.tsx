@@ -493,7 +493,13 @@ const App = () => {
 
   const currentHint = workflowMeta[workflowStep].hint;
   const primaryLabel =
-    workflowStep === "review" ? (analysisStatus === "loading" ? "분석 중..." : isAnalysisCurrent ? "PNG" : "분석") : workflowMeta[workflowStep].primaryLabel;
+    workflowStep === "openings"
+      ? "추가"
+      : workflowStep === "furniture"
+        ? "추가"
+        : workflowStep === "review"
+          ? (analysisStatus === "loading" ? "분석 중..." : isAnalysisCurrent ? "PNG" : "분석")
+          : workflowMeta[workflowStep].primaryLabel;
   const canDelete = Boolean(selectedElement && !selectedElement.locked);
   const canRotate = Boolean(selectedElement);
   const primaryDisabled = analysisStatus === "loading";
@@ -541,6 +547,93 @@ const App = () => {
                 }
               }
             ]
+          : workflowStep === "openings"
+            ? [
+                {
+                  key: "menu",
+                  label: "메뉴",
+                  active: sideMenuOpen,
+                  onClick: () => setSideMenuOpen(true)
+                },
+                {
+                  key: "select",
+                  label: "이동",
+                  active: editorMode === "select",
+                  onClick: () => {
+                    setEditorMode("select");
+                    setBottomSheetMode(null);
+                  }
+                },
+                {
+                  key: "next",
+                  label: "가구",
+                  onClick: () => {
+                    setWorkflowStep("furniture");
+                    setBottomSheetMode("object-picker");
+                    setDrawKind("bed");
+                    setEditorMode("select");
+                    setSelectedElementId(undefined);
+                    setNotice("가구를 추가해보세요.");
+                  }
+                }
+              ]
+            : workflowStep === "furniture"
+              ? [
+                  {
+                    key: "menu",
+                    label: "메뉴",
+                    active: sideMenuOpen,
+                    onClick: () => setSideMenuOpen(true)
+                  },
+                  {
+                    key: "select",
+                    label: "이동",
+                    active: editorMode === "select",
+                    onClick: () => {
+                      setEditorMode("select");
+                      setBottomSheetMode(null);
+                    }
+                  },
+                  {
+                    key: "review-step",
+                    label: "검토 이동",
+                    onClick: () => {
+                      setWorkflowStep("review");
+                      setBottomSheetMode("review-summary");
+                      setEditorMode("select");
+                      setSelectedElementId(undefined);
+                      setNotice("검토 결과를 확인하고 PNG로 내보낼 수 있습니다.");
+                    }
+                  },
+                  ...(canEditElement
+                    ? [
+                        {
+                          key: "edit",
+                          label: "편집",
+                          active: bottomSheetMode === "selection-actions",
+                          onClick: () => setBottomSheetMode("selection-actions")
+                        }
+                      ]
+                    : []),
+                  ...(canRotate
+                    ? [
+                        {
+                          key: "rotate",
+                          label: "회전",
+                          onClick: rotateSelectedElement
+                        }
+                      ]
+                    : []),
+                  ...(canDelete
+                    ? [
+                        {
+                          key: "delete",
+                          label: "삭제",
+                          onClick: deleteSelectedElement
+                        }
+                      ]
+                    : [])
+                ]
           : [
               {
                 key: "menu",
@@ -743,6 +836,11 @@ const App = () => {
         primaryDisabled={primaryDisabled}
         primaryLabel={primaryLabel}
         onPrimary={() => {
+          if (workflowStep === "openings" || workflowStep === "furniture") {
+            setBottomSheetMode("object-picker");
+            return;
+          }
+
           void advanceStep();
         }}
       />
